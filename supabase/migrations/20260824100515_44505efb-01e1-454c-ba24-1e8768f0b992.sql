@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.referral_code_exists(TEXT) FROM anon;
