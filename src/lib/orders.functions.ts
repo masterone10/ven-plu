@@ -48,7 +48,11 @@ export const listMyOrders = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { page, pageSize, from, to } = normalizePagination(data);
 
-    const { data: rows, count, error } = await supabase
+    const {
+      data: rows,
+      count,
+      error,
+    } = await supabase
       .from("orders")
       .select(`${ORDER_COLUMNS}, order_items(id)`, { count: "exact" })
       .eq("user_id", userId)
@@ -58,12 +62,20 @@ export const listMyOrders = createServerFn({ method: "GET" })
     if (error) throw new Error("INTERNAL_ERROR");
 
     const orders = (rows ?? []).map((row) => {
-      const { order_items: items, ...order } = row as typeof row & { order_items: { id: string }[] };
+      const { order_items: items, ...order } = row as typeof row & {
+        order_items: { id: string }[];
+      };
       return toOrderSummary(order, (items ?? []).length);
     });
 
     const total = count ?? orders.length;
-    return { orders, page, pageSize: pageSize || ORDER_PAGE_SIZE, total, pageCount: pageCount(total, pageSize) };
+    return {
+      orders,
+      page,
+      pageSize: pageSize || ORDER_PAGE_SIZE,
+      total,
+      pageCount: pageCount(total, pageSize),
+    };
   });
 
 /**

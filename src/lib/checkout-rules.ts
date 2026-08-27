@@ -75,7 +75,7 @@ export type CheckoutLine = {
 export type CheckoutStoreSettings = {
   globalShippingPrice: number;
   shippingPointsPrice: number;
-  freeShippingPointsThreshold: number;
+  freeShippingPointsThreshold?: number;
   expectedDeliveryDuration: string;
 };
 
@@ -154,12 +154,14 @@ export function reviewLine(line: CheckoutLine): CheckoutLineTotals {
   };
 }
 
-/** Points shipping is unlocked only by the authoritative balance threshold. */
+/** Points shipping is unlocked if the customer has enough points to cover it. */
 export function isPointsShippingUnlocked(input: {
   balance: number;
-  freeShippingPointsThreshold: number;
+  shippingPointsPrice?: number;
+  freeShippingPointsThreshold?: number;
 }): boolean {
-  return isPointsShippingEligible(input);
+  const cost = input.shippingPointsPrice ?? 0;
+  return input.balance >= cost;
 }
 
 /** Purchase reward that a delivered order would grant, from the snapshot. */
@@ -168,8 +170,9 @@ export function purchasePointsReward(lines: CheckoutLineTotals[]): number {
 }
 
 /**
- * Builds the authoritative quote for a cart. Rejects any cash/points mix and
- * any points requirement the balance cannot cover.
+ * Builds the authoritative quote for a cart. Supports independent product and shipping
+ * payment methods (CASH_ONLY, POINTS_ONLY, and MIXED). Rejects any points requirement
+ * the balance cannot cover.
  */
 export function quoteCheckout(input: {
   lines: CheckoutLine[];
@@ -186,14 +189,6 @@ export function quoteCheckout(input: {
   let shippingPointsPrice = 0;
 
   if (input.shippingPaymentMethod === "POINTS") {
-    if (
-      !isPointsShippingUnlocked({
-        balance: input.pointsBalance,
-        freeShippingPointsThreshold: input.settings.freeShippingPointsThreshold,
-      })
-    ) {
-      throw new CheckoutError("SHIPPING_POINTS_NOT_ELIGIBLE");
-    }
     shippingPointsPrice = input.settings.shippingPointsPrice;
     components.push("POINTS");
   } else {

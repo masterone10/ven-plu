@@ -71,6 +71,45 @@ const dict: Dict = {
   adjustmentDebit: { ar: "تسوية خصم", en: "Adjustment debit" },
   orders: { ar: "طلباتي", en: "My orders" },
   adminProducts: { ar: "إدارة المنتجات", en: "Products admin" },
+  resendConfirmation: { ar: "إعادة إرسال رابط التأكيد", en: "Resend confirmation email" },
+  newPassword: { ar: "كلمة المرور الجديدة", en: "New password" },
+  confirmNewPassword: { ar: "تأكيد كلمة المرور الجديدة", en: "Confirm new password" },
+  updatePassword: { ar: "تحديث كلمة المرور", en: "Update password" },
+  passwordUpdated: {
+    ar: "تم تحديث كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول.",
+    en: "Password updated successfully. You can now sign in.",
+  },
+  passwordMismatch: { ar: "كلمتا المرور غير متطابقتين.", en: "Passwords do not match." },
+  resendNotice: {
+    ar: "إذا كان الحساب مسجلاً وغير مؤكد، تم إرسال رابط تأكيد جديد.",
+    en: "If the account exists and is unconfirmed, a new confirmation link has been sent.",
+  },
+  accountConfirmed: {
+    ar: "تم تأكيد حسابك بنجاح! يمكنك الآن تسجيل الدخول.",
+    en: "Your account has been confirmed! You can now sign in.",
+  },
+  backToSignIn: { ar: "العودة لتسجيل الدخول", en: "Back to sign in" },
+  forgotPasswordDescription: {
+    ar: "أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.",
+    en: "Enter your email address and we will send you a password reset link.",
+  },
+  resendDescription: {
+    ar: "أدخل بريدك الإلكتروني لإعادة إرسال رابط تفعيل الحساب.",
+    en: "Enter your email address to receive a new account confirmation link.",
+  },
+  sendResetLink: { ar: "إرسال رابط الاستعادة", en: "Send reset link" },
+  sendConfirmationLink: { ar: "إرسال رابط التأكيد", en: "Send confirmation link" },
+  shippingSettings: { ar: "إعدادات الشحن", en: "Shipping settings" },
+  cashShippingPrice: { ar: "سعر الشحن كاش (ج.م)", en: "Cash shipping price (EGP)" },
+  pointsShippingPrice: { ar: "سعر الشحن بالنقاط", en: "Points shipping price" },
+  expectedDeliveryDuration: { ar: "مدة التوصيل المتوقعة", en: "Expected delivery duration" },
+  shippingMethod: { ar: "طريقة دفع الشحن", en: "Shipping payment method" },
+  cashFreeWithPoints: { ar: "مجاني كاش (خصم نقاط)", en: "Cash-free (points redemption)" },
+  saveShippingSettings: { ar: "حفظ إعدادات الشحن", en: "Save shipping settings" },
+  shippingSettingsSaved: {
+    ar: "تم حفظ إعدادات الشحن بنجاح",
+    en: "Shipping settings saved successfully",
+  },
 };
 
 const ledgerLabels: Record<string, keyof typeof dict> = {

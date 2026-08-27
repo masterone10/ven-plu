@@ -4,7 +4,6 @@ import {
   buildPackageDocuments,
   ensureImageExtension,
   imageEntryName,
-
   isAllowedImageSource,
   packageFileName,
   packageSku,
@@ -27,12 +26,44 @@ const product: PackageProduct = {
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-02-01T00:00:00.000Z",
   variants: [
-    { id: "v1", sku: "VC-30", nameEn: "30ml", nameAr: "٣٠ مل", cashPrice: 450, pointsPrice: 900, stock: 5, isActive: true },
-    { id: "v2", sku: "VC-50", nameEn: "50ml", nameAr: "٥٠ مل", cashPrice: 650, pointsPrice: 1200, stock: 0, isActive: false },
+    {
+      id: "v1",
+      sku: "VC-30",
+      nameEn: "30ml",
+      nameAr: "٣٠ مل",
+      cashPrice: 450,
+      pointsPrice: 900,
+      stock: 5,
+      isActive: true,
+    },
+    {
+      id: "v2",
+      sku: "VC-50",
+      nameEn: "50ml",
+      nameAr: "٥٠ مل",
+      cashPrice: 650,
+      pointsPrice: 1200,
+      stock: 0,
+      isActive: false,
+    },
   ],
   images: [
-    { url: "/products/vitamin-c-serum-30ml.jpg", altEn: "30ml", altAr: "٣٠ مل", variantSku: "VC-30", sortOrder: 0, isPrimary: true },
-    { url: "/products/vitamin-c-serum-50ml.jpg", altEn: "50ml", altAr: "٥٠ مل", variantSku: "VC-50", sortOrder: 1, isPrimary: false },
+    {
+      url: "/products/vitamin-c-serum-30ml.jpg",
+      altEn: "30ml",
+      altAr: "٣٠ مل",
+      variantSku: "VC-30",
+      sortOrder: 0,
+      isPrimary: true,
+    },
+    {
+      url: "/products/vitamin-c-serum-50ml.jpg",
+      altEn: "50ml",
+      altAr: "٥٠ مل",
+      variantSku: "VC-50",
+      sortOrder: 1,
+      isPrimary: false,
+    },
   ],
 };
 
@@ -121,7 +152,9 @@ describe("buildPackageDocuments", () => {
       defaultPointsPrice: null,
     });
     const parsed = JSON.parse(docsNoPoints.variantsJson);
-    expect(parsed.variants.every((v: { pointsPrice: number | null }) => v.pointsPrice === null)).toBe(true);
+    expect(
+      parsed.variants.every((v: { pointsPrice: number | null }) => v.pointsPrice === null),
+    ).toBe(true);
   });
 
   it("plans one archive entry per allowed image", () => {
@@ -135,7 +168,16 @@ describe("buildPackageDocuments", () => {
   it("rejects unsupported image sources instead of fetching them", () => {
     const docsBad = buildPackageDocuments({
       ...product,
-      images: [{ url: "file:///etc/passwd", altEn: null, altAr: null, variantSku: null, sortOrder: 0, isPrimary: false }],
+      images: [
+        {
+          url: "file:///etc/passwd",
+          altEn: null,
+          altAr: null,
+          variantSku: null,
+          sortOrder: 0,
+          isPrimary: false,
+        },
+      ],
     });
     expect(docsBad.plan).toEqual([]);
     expect(docsBad.rejected[0]?.reason).toBe("unsupported image source");
@@ -161,16 +203,22 @@ describe("buildManifest", () => {
 
 describe("ensureImageExtension", () => {
   it("derives an extension from the served content type when the URL has none", () => {
-    expect(ensureImageExtension("images/01-photo-abc", "image/jpeg")).toBe("images/01-photo-abc.jpg");
+    expect(ensureImageExtension("images/01-photo-abc", "image/jpeg")).toBe(
+      "images/01-photo-abc.jpg",
+    );
     expect(ensureImageExtension("images/01-photo-abc", "image/png; charset=binary")).toBe(
       "images/01-photo-abc.png",
     );
-    expect(ensureImageExtension("images/01-photo-abc", "image/webp")).toBe("images/01-photo-abc.webp");
+    expect(ensureImageExtension("images/01-photo-abc", "image/webp")).toBe(
+      "images/01-photo-abc.webp",
+    );
   });
 
   it("falls back to .bin for unknown or absent content types", () => {
     expect(ensureImageExtension("images/01-photo", null)).toBe("images/01-photo.bin");
-    expect(ensureImageExtension("images/01-photo", "application/octet-stream")).toBe("images/01-photo.bin");
+    expect(ensureImageExtension("images/01-photo", "application/octet-stream")).toBe(
+      "images/01-photo.bin",
+    );
   });
 
   it("leaves entries that already carry an extension untouched", () => {

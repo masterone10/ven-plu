@@ -12,9 +12,8 @@ import {
 } from "./checkout-rules";
 
 const settings: CheckoutStoreSettings = {
-  globalShippingPrice: 60,
-  shippingPointsPrice: 0,
-  freeShippingPointsThreshold: 500,
+  globalShippingPrice: 80,
+  shippingPointsPrice: 400,
   expectedDeliveryDuration: "2-5 days",
 };
 
@@ -47,8 +46,8 @@ function expectCode(fn: () => unknown, code: string) {
   throw new Error(`expected ${code} to be thrown`);
 }
 
-describe("funding mode at checkout", () => {
-  it("accepts CASH_ONLY (cash items + cash shipping)", () => {
+describe("independent shipping and product payment combinations", () => {
+  it("accepts Product CASH + Shipping CASH (CASH_ONLY)", () => {
     const quote = quoteCheckout({
       lines: [line()],
       shippingPaymentMethod: "CASH",
@@ -57,86 +56,62 @@ describe("funding mode at checkout", () => {
     });
     expect(quote.fundingMode).toBe("CASH_ONLY");
     expect(quote.cashItemsTotal).toBe(960);
-    expect(quote.shippingCashPrice).toBe(60);
-    expect(quote.cashTotal).toBe(1020);
+    expect(quote.shippingCashPrice).toBe(80);
+    expect(quote.shippingPointsPrice).toBe(0);
+    expect(quote.cashTotal).toBe(1040);
     expect(quote.pointsTotal).toBe(0);
   });
 
-  it("accepts POINTS_ONLY (points items + points shipping)", () => {
+  it("accepts Product CASH + Shipping POINTS (MIXED - cash shipping is 0 EGP)", () => {
+    const quote = quoteCheckout({
+      lines: [line()],
+      shippingPaymentMethod: "POINTS",
+      settings,
+      pointsBalance: 500,
+    });
+    expect(quote.fundingMode).toBe("MIXED");
+    expect(quote.cashItemsTotal).toBe(960);
+    expect(quote.shippingCashPrice).toBe(0);
+    expect(quote.shippingPointsPrice).toBe(400);
+    expect(quote.cashTotal).toBe(960);
+    expect(quote.pointsTotal).toBe(400);
+  });
+
+  it("accepts Product POINTS + Shipping CASH (MIXED)", () => {
+    const quote = quoteCheckout({
+      lines: [line({ paymentMethod: "POINTS" })],
+      shippingPaymentMethod: "CASH",
+      settings,
+      pointsBalance: 2000,
+    });
+    expect(quote.fundingMode).toBe("MIXED");
+    expect(quote.pointsItemsTotal).toBe(1800);
+    expect(quote.shippingCashPrice).toBe(80);
+    expect(quote.shippingPointsPrice).toBe(0);
+    expect(quote.cashTotal).toBe(80);
+    expect(quote.pointsTotal).toBe(1800);
+  });
+
+  it("accepts Product POINTS + Shipping POINTS (POINTS_ONLY)", () => {
     const quote = quoteCheckout({
       lines: [line({ paymentMethod: "POINTS" })],
       shippingPaymentMethod: "POINTS",
       settings,
-      pointsBalance: 2000,
+      pointsBalance: 2500,
     });
     expect(quote.fundingMode).toBe("POINTS_ONLY");
     expect(quote.pointsItemsTotal).toBe(1800);
-    expect(quote.shippingPointsPrice).toBe(0);
-    expect(quote.pointsTotal).toBe(1800);
+    expect(quote.shippingCashPrice).toBe(0);
+    expect(quote.shippingPointsPrice).toBe(400);
     expect(quote.cashTotal).toBe(0);
-  });
-
-  it("rejects cash items with points shipping (funding may never combine both)", () => {
-    expectCode(
-      () =>
-        quoteCheckout({
-          lines: [line({ paymentMethod: "CASH" })],
-          shippingPaymentMethod: "POINTS",
-          settings,
-          pointsBalance: 5000,
-        }),
-      "VALIDATION_ERROR",
-    );
-  });
-
-  it("rejects points items with cash shipping when shipping costs cash", () => {
-    expectCode(
-      () =>
-        quoteCheckout({
-          lines: [line({ paymentMethod: "POINTS" })],
-          shippingPaymentMethod: "CASH",
-          settings,
-          pointsBalance: 5000,
-        }),
-      "VALIDATION_ERROR",
-    );
-  });
-
-  it("rejects a cart with mixed item payment methods", () => {
-    expectCode(
-      () =>
-        quoteCheckout({
-          lines: [line({ paymentMethod: "CASH" }), line({ sku: "B", paymentMethod: "POINTS" })],
-          shippingPaymentMethod: "CASH",
-          settings: { ...settings, globalShippingPrice: 0 },
-          pointsBalance: 5000,
-        }),
-      "VALIDATION_ERROR",
-    );
-  });
-
-  it("only ever produces CASH_ONLY or POINTS_ONLY for accepted combinations", () => {
-    const cash = quoteCheckout({
-      lines: [line()],
-      shippingPaymentMethod: "CASH",
-      settings,
-      pointsBalance: 0,
-    });
-    const points = quoteCheckout({
-      lines: [line({ paymentMethod: "POINTS" })],
-      shippingPaymentMethod: "POINTS",
-      settings,
-      pointsBalance: 9000,
-    });
-    expect([cash.fundingMode, points.fundingMode]).toEqual(["CASH_ONLY", "POINTS_ONLY"]);
+    expect(quote.pointsTotal).toBe(2200);
   });
 });
 
 describe("line validation", () => {
   it("rejects an empty cart", () => {
     expectCode(
-      () =>
-        quoteCheckout({ lines: [], shippingPaymentMethod: "CASH", settings, pointsBalance: 0 }),
+      () => quoteCheckout({ lines: [], shippingPaymentMethod: "CASH", settings, pointsBalance: 0 }),
       "CART_EMPTY",
     );
   });
@@ -199,23 +174,24 @@ describe("points balance and shipping eligibility", () => {
       lines: [line({ paymentMethod: "POINTS" })],
       shippingPaymentMethod: "POINTS",
       settings,
-      pointsBalance: 1800,
+      pointsBalance: 2200,
     });
-    expect(1800 - quote.pointsTotal).toBe(0);
+    expect(2200 - quote.pointsTotal).toBe(0);
   });
 
-  it("locks points shipping below the threshold", () => {
-    expect(isPointsShippingUnlocked({ balance: 499, freeShippingPointsThreshold: 500 })).toBe(false);
-    expect(isPointsShippingUnlocked({ balance: 500, freeShippingPointsThreshold: 500 })).toBe(true);
+  it("verifies points shipping eligibility based on points price and balance", () => {
+    expect(isPointsShippingUnlocked({ balance: 399, shippingPointsPrice: 400 })).toBe(false);
+    expect(isPointsShippingUnlocked({ balance: 400, shippingPointsPrice: 400 })).toBe(true);
+    expect(isPointsShippingUnlocked({ balance: 500, shippingPointsPrice: 400 })).toBe(true);
     expectCode(
       () =>
         quoteCheckout({
           lines: [line({ paymentMethod: "POINTS" })],
           shippingPaymentMethod: "POINTS",
           settings,
-          pointsBalance: 499,
+          pointsBalance: 2199,
         }),
-      "SHIPPING_POINTS_NOT_ELIGIBLE",
+      "INSUFFICIENT_POINTS",
     );
   });
 

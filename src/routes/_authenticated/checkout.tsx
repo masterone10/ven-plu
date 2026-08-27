@@ -52,20 +52,19 @@ function CheckoutPage() {
   const [busy, setBusy] = useState(false);
   const idempotencyKey = useRef(`co_${crypto.randomUUID()}`);
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const settings = data?.settings;
   const balance = data?.pointsBalance ?? 0;
 
-  const pointsShipping = isPointsShippingUnlocked({
-    balance,
-    freeShippingPointsThreshold: settings?.freeShippingPointsThreshold ?? 0,
-  });
+  const pointsShippingCost = settings?.shippingPointsPrice ?? 400;
+  const cashShippingCost = settings?.globalShippingPrice ?? 80;
+  const hasEnoughPointsForShipping = balance >= pointsShippingCost;
 
   const preview = useMemo(() => {
     const cashItems = items.reduce((sum, item) => sum + item.lineCashTotal, 0);
     const pointsItems = items.reduce((sum, item) => sum + item.linePointsTotal, 0);
-    const shippingCash = shippingMethod === "CASH" ? (settings?.globalShippingPrice ?? 0) : 0;
-    const shippingPoints = shippingMethod === "POINTS" ? (settings?.shippingPointsPrice ?? 0) : 0;
+    const shippingCash = shippingMethod === "CASH" ? cashShippingCost : 0;
+    const shippingPoints = shippingMethod === "POINTS" ? pointsShippingCost : 0;
     return {
       cashItems,
       pointsItems,
@@ -74,18 +73,11 @@ function CheckoutPage() {
       cashTotal: Math.round((cashItems + shippingCash) * 100) / 100,
       pointsTotal: pointsItems + shippingPoints,
     };
-  }, [items, settings, shippingMethod]);
+  }, [items, cashShippingCost, pointsShippingCost, shippingMethod]);
 
-  const hasCash = items.some((item) => item.paymentMethod === "CASH");
-  const hasPoints = items.some((item) => item.paymentMethod === "POINTS");
-  const wouldMix =
-    (hasCash && (hasPoints || shippingMethod === "POINTS")) ||
-    (hasPoints && (hasCash || (shippingMethod === "CASH" && preview.shippingCash > 0)));
+  const hasInsufficientPoints = preview.pointsTotal > balance;
   const blocked =
-    items.length === 0 ||
-    wouldMix ||
-    items.some((item) => item.issue !== null) ||
-    preview.pointsTotal > balance;
+    items.length === 0 || items.some((item) => item.issue !== null) || hasInsufficientPoints;
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -195,7 +187,7 @@ function CheckoutPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "دفع الشحن" : "Shipping payment"}</Label>
+                <Label>{locale === "ar" ? "طريقة دفع الشحن" : "Shipping payment method"}</Label>
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -203,32 +195,49 @@ function CheckoutPage() {
                     variant={shippingMethod === "CASH" ? "default" : "outline"}
                     onClick={() => setShippingMethod("CASH")}
                   >
-                    {locale === "ar" ? "كاش" : "Cash"}
+                    {locale === "ar"
+                      ? `كاش (${formatEGP(cashShippingCost)})`
+                      : `Cash (${formatEGP(cashShippingCost)})`}
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant={shippingMethod === "POINTS" ? "default" : "outline"}
-                    disabled={!pointsShipping}
+                    disabled={!hasEnoughPointsForShipping}
                     onClick={() => setShippingMethod("POINTS")}
                   >
-                    {locale === "ar" ? "نقاط" : "Points"}
+                    {locale === "ar"
+                      ? `نقاط (${formatPoints(pointsShippingCost)})`
+                      : `Points (${formatPoints(pointsShippingCost)})`}
                   </Button>
                 </div>
-                {!pointsShipping ? (
+                {shippingMethod === "POINTS" ? (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                    {locale === "ar"
+                      ? `الشحن مجاني كاش ويتم خصم ${formatPoints(pointsShippingCost)} من رصيدك.`
+                      : `Shipping is cash-free and ${formatPoints(pointsShippingCost)} will be deducted from your balance.`}
+                  </p>
+                ) : (
                   <p className="text-xs text-muted-foreground">
                     {locale === "ar"
-                      ? `الشحن بالنقاط يتاح عند وصول رصيدك إلى ${settings?.freeShippingPointsThreshold ?? 0} نقطة.`
-                      : `Points shipping unlocks at ${settings?.freeShippingPointsThreshold ?? 0} points.`}
+                      ? `تكلفة الشحن كاش: ${formatEGP(cashShippingCost)}.`
+                      : `Cash shipping cost: ${formatEGP(cashShippingCost)}.`}
+                  </p>
+                )}
+                {!hasEnoughPointsForShipping && shippingMethod !== "POINTS" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {locale === "ar"
+                      ? `الدفع بالنقاط للشحن يتطلب ${formatPoints(pointsShippingCost)} (رصيدك الحالي: ${formatPoints(balance)}).`
+                      : `Points shipping requires ${formatPoints(pointsShippingCost)} (your balance: ${formatPoints(balance)}).`}
                   </p>
                 ) : null}
               </div>
 
-              {wouldMix ? (
+              {hasInsufficientPoints ? (
                 <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs">
                   {locale === "ar"
-                    ? "لا يمكن خلط الكاش والنقاط في نفس الطلب — عدّل السلة أو طريقة الشحن."
-                    : "An order cannot mix cash and points — adjust the cart or the shipping method."}
+                    ? `رصيد نقاطك (${formatPoints(balance)}) غير كافٍ لتغطية إجمالي النقاط المطلوب (${formatPoints(preview.pointsTotal)}).`
+                    : `Your points balance (${formatPoints(balance)}) is insufficient for the required total (${formatPoints(preview.pointsTotal)}).`}
                 </p>
               ) : null}
 
@@ -248,7 +257,7 @@ function CheckoutPage() {
             {items.map((item) => (
               <div key={item.id} className="flex justify-between gap-2">
                 <span className="text-muted-foreground">
-                  {(locale === "ar" ? item.productNameAr : item.productNameEn)} × {item.quantity}
+                  {locale === "ar" ? item.productNameAr : item.productNameEn} × {item.quantity}
                 </span>
                 <span>
                   {item.paymentMethod === "POINTS"
@@ -259,7 +268,9 @@ function CheckoutPage() {
             ))}
             <Separator />
             <div className="flex justify-between">
-              <span className="text-muted-foreground">{locale === "ar" ? "الشحن" : "Shipping"}</span>
+              <span className="text-muted-foreground">
+                {locale === "ar" ? "الشحن" : "Shipping"}
+              </span>
               <span>
                 {shippingMethod === "POINTS"
                   ? formatPoints(preview.shippingPoints)

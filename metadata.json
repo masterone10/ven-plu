@@ -1,0 +1,6 @@
+{
+  "name": "VEN+",
+  "description": "Bilingual beauty and wellness e-commerce platform with product catalog, cart, orders, and rewards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

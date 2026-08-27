@@ -58,13 +58,14 @@ const itemRow: OrderItemSnapshotRow = {
 };
 
 describe("funding mode", () => {
-  it("only accepts CASH_ONLY and POINTS_ONLY", () => {
-    expect(ORDER_FUNDING_MODES).toEqual(["CASH_ONLY", "POINTS_ONLY"]);
+  it("accepts CASH_ONLY, POINTS_ONLY, and MIXED", () => {
+    expect(ORDER_FUNDING_MODES).toEqual(["CASH_ONLY", "POINTS_ONLY", "MIXED"]);
     expect(assertFundingMode("CASH_ONLY")).toBe("CASH_ONLY");
     expect(assertFundingMode("POINTS_ONLY")).toBe("POINTS_ONLY");
+    expect(assertFundingMode("MIXED")).toBe("MIXED");
   });
 
-  it("accepts only the two canonical funding modes and rejects anything else", () => {
+  it("accepts only valid funding modes and rejects invalid formats", () => {
     expect(() => assertFundingMode("CASH_AND_POINTS")).toThrow(OrderRetrievalError);
     expect(() => assertFundingMode("cash_only")).toThrow(OrderRetrievalError);
     expect(() => assertFundingMode("CASH")).toThrow(OrderRetrievalError);
@@ -153,7 +154,14 @@ describe("snapshot mapping", () => {
   it("builds the full detail view including shipping and points composition", () => {
     const detail = toOrderDetail(
       { ...orderRow, funding_mode: "POINTS_ONLY", shipping_payment_method: "POINTS" },
-      [{ ...itemRow, product_payment_method: "POINTS", unit_points_price: 900, line_points_total: 1800 }],
+      [
+        {
+          ...itemRow,
+          product_payment_method: "POINTS",
+          unit_points_price: 900,
+          line_points_total: 1800,
+        },
+      ],
       [
         { type: "REDEEM_PRODUCT", delta: -1800 },
         { type: "REDEEM_SHIPPING", delta: -100 },

@@ -47,7 +47,15 @@ describe("admin product schema", () => {
     expect(() =>
       baseProduct({
         variants: [
-          { sku: "vc-ser-30", nameEn: "30 ml", nameAr: "30", cashPrice: 1, pointsPrice: null, stock: 1, isActive: true },
+          {
+            sku: "vc-ser-30",
+            nameEn: "30 ml",
+            nameAr: "30",
+            cashPrice: 1,
+            pointsPrice: null,
+            stock: 1,
+            isActive: true,
+          },
         ],
       }),
     ).toThrow();
@@ -70,7 +78,15 @@ describe("admin product schema", () => {
     expect(() =>
       baseProduct({
         variants: [
-          { sku: "VC-SER-30", nameEn: "30", nameAr: "30", cashPrice: 1, pointsPrice: null, stock: -3, isActive: true },
+          {
+            sku: "VC-SER-30",
+            nameEn: "30",
+            nameAr: "30",
+            cashPrice: 1,
+            pointsPrice: null,
+            stock: -3,
+            isActive: true,
+          },
         ],
       }),
     ).toThrow();
@@ -95,7 +111,15 @@ describe("assertProductConsistency", () => {
     const input = baseProduct({
       pointsEnabled: false,
       variants: [
-        { sku: "VC-SER-30", nameEn: "30", nameAr: "30", cashPrice: 1, pointsPrice: null, stock: 1, isActive: true },
+        {
+          sku: "VC-SER-30",
+          nameEn: "30",
+          nameAr: "30",
+          cashPrice: 1,
+          pointsPrice: null,
+          stock: 1,
+          isActive: true,
+        },
       ],
     });
     expect(() => assertProductConsistency({ ...input, defaultPointsPrice: 500 })).toThrow(
@@ -108,7 +132,15 @@ describe("assertProductConsistency", () => {
       pointsEnabled: false,
       defaultPointsPrice: null,
       variants: [
-        { sku: "VC-SER-30", nameEn: "30", nameAr: "30", cashPrice: 1, pointsPrice: 700, stock: 1, isActive: true },
+        {
+          sku: "VC-SER-30",
+          nameEn: "30",
+          nameAr: "30",
+          cashPrice: 1,
+          pointsPrice: 700,
+          stock: 1,
+          isActive: true,
+        },
       ],
     });
     expect(() => assertProductConsistency(input)).toThrow(/VALIDATION_ERROR/);
@@ -124,13 +156,23 @@ describe("assertProductConsistency", () => {
       stock: 1,
       isActive: true,
     };
-    expect(() => assertProductConsistency(baseProduct({ variants: [variant, { ...variant }] }))).toThrow();
+    expect(() =>
+      assertProductConsistency(baseProduct({ variants: [variant, { ...variant }] })),
+    ).toThrow();
   });
 
   it("requires at least one active variant", () => {
     const input = baseProduct({
       variants: [
-        { sku: "VC-SER-30", nameEn: "30", nameAr: "30", cashPrice: 1, pointsPrice: 900, stock: 1, isActive: false },
+        {
+          sku: "VC-SER-30",
+          nameEn: "30",
+          nameAr: "30",
+          cashPrice: 1,
+          pointsPrice: 900,
+          stock: 1,
+          isActive: false,
+        },
       ],
     });
     expect(() => assertProductConsistency(input)).toThrow();
@@ -138,7 +180,16 @@ describe("assertProductConsistency", () => {
 
   it("rejects media pointing at an unknown variant", () => {
     const input = baseProduct({
-      media: [{ url: "/a.jpg", altEn: null, altAr: null, variantSku: "NOPE", sortOrder: 0, isPrimary: true }],
+      media: [
+        {
+          url: "/a.jpg",
+          altEn: null,
+          altAr: null,
+          variantSku: "NOPE",
+          sortOrder: 0,
+          isPrimary: true,
+        },
+      ],
     });
     expect(() => assertProductConsistency(input)).toThrow();
   });
@@ -146,8 +197,22 @@ describe("assertProductConsistency", () => {
   it("rejects two primary images in the same scope", () => {
     const input = baseProduct({
       media: [
-        { url: "/a.jpg", altEn: null, altAr: null, variantSku: null, sortOrder: 0, isPrimary: true },
-        { url: "/b.jpg", altEn: null, altAr: null, variantSku: null, sortOrder: 1, isPrimary: true },
+        {
+          url: "/a.jpg",
+          altEn: null,
+          altAr: null,
+          variantSku: null,
+          sortOrder: 0,
+          isPrimary: true,
+        },
+        {
+          url: "/b.jpg",
+          altEn: null,
+          altAr: null,
+          variantSku: null,
+          sortOrder: 1,
+          isPrimary: true,
+        },
       ],
     });
     expect(() => assertProductConsistency(input)).toThrow();
@@ -156,8 +221,22 @@ describe("assertProductConsistency", () => {
   it("allows one primary per variant scope", () => {
     const input = baseProduct({
       media: [
-        { url: "/a.jpg", altEn: null, altAr: null, variantSku: null, sortOrder: 0, isPrimary: true },
-        { url: "/b.jpg", altEn: null, altAr: null, variantSku: "VC-SER-30", sortOrder: 1, isPrimary: true },
+        {
+          url: "/a.jpg",
+          altEn: null,
+          altAr: null,
+          variantSku: null,
+          sortOrder: 0,
+          isPrimary: true,
+        },
+        {
+          url: "/b.jpg",
+          altEn: null,
+          altAr: null,
+          variantSku: "VC-SER-30",
+          sortOrder: 1,
+          isPrimary: true,
+        },
       ],
     });
     expect(() => assertProductConsistency(input)).not.toThrow();

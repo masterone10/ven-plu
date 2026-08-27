@@ -13,7 +13,13 @@ import {
 } from "@/lib/admin-product-rules";
 import { sortMedia, type MediaImage } from "@/lib/variant-media";
 
-export type AdminCategory = { id: string; slug: string; nameEn: string; nameAr: string; isActive: boolean };
+export type AdminCategory = {
+  id: string;
+  slug: string;
+  nameEn: string;
+  nameAr: string;
+  isActive: boolean;
+};
 
 export type AdminProductDetail = ProductInput & {
   id: string;
@@ -23,7 +29,6 @@ export type AdminProductDetail = ProductInput & {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AuthedContext = { supabase: any; userId: string };
-
 
 /**
  * Server-side authorization. The caller's role is read through the
@@ -42,56 +47,62 @@ async function assertAdmin(context: AuthedContext): Promise<void> {
 /** Admin product list with the operational columns from §56. */
 export const listAdminProducts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<{ products: AdminProductRow[]; categories: AdminCategory[] }> => {
-    await assertAdmin(context);
-    const { supabase } = context;
+  .handler(
+    async ({ context }): Promise<{ products: AdminProductRow[]; categories: AdminCategory[] }> => {
+      await assertAdmin(context);
+      const { supabase } = context;
 
-    const [productsResult, categoriesResult] = await Promise.all([
-      supabase
-        .from("products")
-        .select(
-          `id, slug, name_en, name_ar, category_id, cash_price, points_enabled,
+      const [productsResult, categoriesResult] = await Promise.all([
+        supabase
+          .from("products")
+          .select(
+            `id, slug, name_en, name_ar, category_id, cash_price, points_enabled,
            default_points_price, is_active,
-           product_variants ( id, points_price, stock, is_active ),
+           product_variants ( id, sku, name_en, name_ar, cash_price, points_price, stock, is_active ),
            product_images ( url, alt_en, alt_ar, is_primary, sort_order, variant_id )`,
-        )
-        .order("created_at", { ascending: true }),
-      supabase.from("categories").select("id, slug, name_en, name_ar, is_active").order("sort_order"),
-    ]);
+          )
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("categories")
+          .select("id, slug, name_en, name_ar, is_active")
+          .order("sort_order"),
+      ]);
 
-    if (productsResult.error || categoriesResult.error) throw new AdminProductError("INTERNAL_ERROR");
+      if (productsResult.error || categoriesResult.error)
+        throw new AdminProductError("INTERNAL_ERROR");
 
-    const categories: AdminCategory[] = (categoriesResult.data ?? []).map((row: any) => ({
-      id: row.id,
-      slug: row.slug,
-      nameEn: row.name_en,
-      nameAr: row.name_ar,
-      isActive: row.is_active,
-    }));
-    const byId = new Map(categories.map((row) => [row.id, row]));
+      const categories: AdminCategory[] = (categoriesResult.data ?? []).map((row: any) => ({
+        id: row.id,
+        slug: row.slug,
+        nameEn: row.name_en,
+        nameAr: row.name_ar,
+        isActive: row.is_active,
+      }));
+      const byId = new Map(categories.map((row) => [row.id, row]));
 
-    const products = (productsResult.data ?? []).map((row: any) => {
-      const images = sortMedia(
-        (row.product_images ?? []).map((image: any) => ({
-          url: image.url,
-          altEn: image.alt_en,
-          altAr: image.alt_ar,
-          variantId: image.variant_id,
-          isPrimary: image.is_primary,
-          sortOrder: image.sort_order,
-        })) as MediaImage[],
-      );
-      const category = row.category_id ? byId.get(row.category_id) : null;
-      return toAdminProductRow(
-        row,
-        row.product_variants ?? [],
-        category ? { name_en: category.nameEn, name_ar: category.nameAr } : null,
-        images[0]?.url ?? null,
-      );
-    });
+      const products = (productsResult.data ?? []).map((row: any) => {
+        const images = sortMedia(
+          (row.product_images ?? []).map((image: any) => ({
+            url: image.url,
+            altEn: image.alt_en,
+            altAr: image.alt_ar,
+            variantId: image.variant_id,
+            isPrimary: image.is_primary,
+            sortOrder: image.sort_order,
+          })) as MediaImage[],
+        );
+        const category = row.category_id ? byId.get(row.category_id) : null;
+        return toAdminProductRow(
+          row,
+          row.product_variants ?? [],
+          category ? { name_en: category.nameEn, name_ar: category.nameAr } : null,
+          images[0]?.url ?? null,
+        );
+      });
 
-    return { products, categories };
-  });
+      return { products, categories };
+    },
+  );
 
 /** Full editable product payload for the admin workspace. */
 export const getAdminProduct = createServerFn({ method: "GET" })
@@ -315,6 +326,60 @@ export const setAdminProductActive = createServerFn({ method: "POST" })
     if (updated.error) throw new AdminProductError("INTERNAL_ERROR");
     if (!updated.data) throw new AdminProductError("PRODUCT_NOT_FOUND");
     return { productId: updated.data.id, isActive: updated.data.is_active };
+  });
+
+export type AdminShippingSettings = {
+  globalShippingPrice: number;
+  shippingPointsPrice: number;
+  expectedDeliveryDuration: string;
+};
+
+export const getAdminShippingSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<AdminShippingSettings> => {
+    await assertAdmin(context);
+    const { data, error } = await context.supabase
+      .from("store_settings")
+      .select("global_shipping_price, shipping_points_price, expected_delivery_duration")
+      .maybeSingle();
+    if (error) throw new AdminProductError("INTERNAL_ERROR");
+    return {
+      globalShippingPrice: Number(data?.global_shipping_price ?? 80),
+      shippingPointsPrice: Number(data?.shipping_points_price ?? 400),
+      expectedDeliveryDuration: data?.expected_delivery_duration ?? "2-5 days",
+    };
+  });
+
+export const updateAdminShippingSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        globalShippingPrice: z.number().min(0),
+        shippingPointsPrice: z.number().int().min(0),
+        expectedDeliveryDuration: z.string().min(1).max(100),
+      })
+      .parse(data),
+  )
+  .handler(async ({ context, data }): Promise<AdminShippingSettings> => {
+    await assertAdmin(context);
+    const { data: updated, error } = await context.supabase
+      .from("store_settings")
+      .upsert({
+        id: true,
+        global_shipping_price: data.globalShippingPrice,
+        shipping_points_price: data.shippingPointsPrice,
+        expected_delivery_duration: data.expectedDeliveryDuration.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .select("global_shipping_price, shipping_points_price, expected_delivery_duration")
+      .single();
+    if (error) throw new AdminProductError("INTERNAL_ERROR");
+    return {
+      globalShippingPrice: Number(updated.global_shipping_price),
+      shippingPointsPrice: Number(updated.shipping_points_price),
+      expectedDeliveryDuration: updated.expected_delivery_duration,
+    };
   });
 
 function mapWriteError(error: { code?: string; message?: string }, field: "slug" | "sku") {

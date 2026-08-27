@@ -30,7 +30,8 @@ export class AdminProductError extends Error {
 }
 
 export const forbidden = () => new AdminProductError("FORBIDDEN");
-export const validationError = (detail: string) => new AdminProductError("VALIDATION_ERROR", detail);
+export const validationError = (detail: string) =>
+  new AdminProductError("VALIDATION_ERROR", detail);
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const skuPattern = /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
@@ -151,11 +152,25 @@ export function assertCategoryAssignable(category: { isActive: boolean } | null)
   if (category && !category.isActive) throw new AdminProductError("CATEGORY_INACTIVE");
 }
 
+export type AdminProductVariantSummary = {
+  id: string;
+  sku: string;
+  nameEn: string;
+  nameAr: string;
+  cashPrice: number | null;
+  pointsPrice: number | null;
+  stock: number;
+  isActive: boolean;
+};
+
 export type AdminProductRow = {
   id: string;
   slug: string;
   nameEn: string;
   nameAr: string;
+  /** Title aliases for backwards/component compatibility */
+  titleEn?: string;
+  titleAr?: string;
   categoryId: string | null;
   categoryNameEn: string | null;
   categoryNameAr: string | null;
@@ -163,15 +178,26 @@ export type AdminProductRow = {
   pointsEnabled: boolean;
   /** Product default; variants may override. */
   pointsPrice: number | null;
+  defaultPointsPrice: number | null;
   variantCount: number;
   activeVariantCount: number;
   /** Server-computed from persisted variant rows, never from browser state. */
   totalStock: number;
   isActive: boolean;
   imageUrl: string | null;
+  variants: AdminProductVariantSummary[];
 };
 
-type RawVariant = { id: string; points_price: number | null; stock: number; is_active: boolean };
+type RawVariant = {
+  id: string;
+  sku?: string;
+  name_en?: string;
+  name_ar?: string;
+  cash_price?: number | null;
+  points_price: number | null;
+  stock: number;
+  is_active: boolean;
+};
 
 /** Operational list row. Stock and variant counts are derived server-side. */
 export function toAdminProductRow(
@@ -190,22 +216,37 @@ export function toAdminProductRow(
   category: { name_en: string; name_ar: string } | null,
   imageUrl: string | null,
 ): AdminProductRow {
+  const mappedVariants: AdminProductVariantSummary[] = variants.map((v) => ({
+    id: v.id,
+    sku: v.sku ?? "",
+    nameEn: v.name_en ?? product.name_en,
+    nameAr: v.name_ar ?? product.name_ar,
+    cashPrice: v.cash_price != null ? Number(v.cash_price) : null,
+    pointsPrice: v.points_price != null ? Number(v.points_price) : null,
+    stock: v.stock ?? 0,
+    isActive: v.is_active,
+  }));
+
   return {
     id: product.id,
     slug: product.slug,
     nameEn: product.name_en,
     nameAr: product.name_ar,
+    titleEn: product.name_en,
+    titleAr: product.name_ar,
     categoryId: product.category_id,
     categoryNameEn: category?.name_en ?? null,
     categoryNameAr: category?.name_ar ?? null,
     cashPrice: Number(product.cash_price),
     pointsEnabled: product.points_enabled,
     pointsPrice: product.points_enabled ? product.default_points_price : null,
+    defaultPointsPrice: product.points_enabled ? product.default_points_price : null,
     variantCount: variants.length,
     activeVariantCount: variants.filter((variant) => variant.is_active).length,
     totalStock: variants.reduce((sum, variant) => sum + (variant.stock ?? 0), 0),
     isActive: product.is_active,
     imageUrl,
+    variants: mappedVariants,
   };
 }
 

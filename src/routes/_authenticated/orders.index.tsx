@@ -96,7 +96,9 @@ function OrdersListPage() {
                 </CardHeader>
                 <CardContent className="flex flex-wrap items-center justify-between gap-3 text-sm">
                   <div className="space-y-1">
-                    <p className="text-muted-foreground">{dateFormat.format(new Date(order.createdAt))}</p>
+                    <p className="text-muted-foreground">
+                      {dateFormat.format(new Date(order.createdAt))}
+                    </p>
                     <p className="text-muted-foreground">
                       {order.itemCount}{" "}
                       {locale === "ar" ? "عنصر" : order.itemCount === 1 ? "item" : "items"}

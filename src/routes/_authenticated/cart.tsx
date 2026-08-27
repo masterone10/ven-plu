@@ -70,7 +70,9 @@ function CartPage() {
   const items = data?.items ?? [];
   const cashTotal = items.reduce((sum, item) => sum + item.lineCashTotal, 0);
   const pointsTotal = items.reduce((sum, item) => sum + item.linePointsTotal, 0);
-  const hasConflictingMethods = items.some((i) => i.paymentMethod === "CASH") && items.some((i) => i.paymentMethod === "POINTS");
+  const hasConflictingMethods =
+    items.some((i) => i.paymentMethod === "CASH") &&
+    items.some((i) => i.paymentMethod === "POINTS");
   const blocked = items.some((item) => item.issue !== null);
 
   return (

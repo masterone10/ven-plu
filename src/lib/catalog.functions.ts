@@ -99,4 +99,3 @@ export const listCatalog = createServerFn({ method: "GET" }).handler(
     });
   },
 );
-

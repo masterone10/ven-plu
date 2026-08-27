@@ -13,7 +13,6 @@ import {
   type PackageProduct,
 } from "@/lib/product-package";
 
-
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_IMAGE_BYTES = 40 * 1024 * 1024;
 

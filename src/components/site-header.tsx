@@ -16,7 +16,11 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4">
-        <Link to="/" dir="ltr" className="flex items-baseline gap-1 text-xl font-black tracking-tight">
+        <Link
+          to="/"
+          dir="ltr"
+          className="flex items-baseline gap-1 text-xl font-black tracking-tight"
+        >
           <span className="text-foreground">VEN</span>
           <span className="text-accent">+</span>
         </Link>

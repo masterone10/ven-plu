@@ -28,7 +28,11 @@ const all = [brown, blackAlt, productPhoto, black];
 
 describe("sortMedia", () => {
   it("puts the primary image first, then sort order", () => {
-    const sorted = sortMedia([img({ url: "/b.jpg", sortOrder: 2 }), img({ url: "/c.jpg", sortOrder: 1 }), productPhoto]);
+    const sorted = sortMedia([
+      img({ url: "/b.jpg", sortOrder: 2 }),
+      img({ url: "/c.jpg", sortOrder: 1 }),
+      productPhoto,
+    ]);
     expect(sorted.map((i) => i.url)).toEqual(["/product.jpg", "/c.jpg", "/b.jpg"]);
   });
 

@@ -44,7 +44,8 @@ function HomePage() {
       ar: "اكسب النقاط عند التسليم",
       en: "Earn points on delivery",
       arBody: "تُضاف النقاط فقط عندما يصل الطلب لحالة «تم التسليم»، ولا تُضاف للطلبات الملغاة.",
-      enBody: "Points are credited only when an order reaches DELIVERED, never for cancelled orders.",
+      enBody:
+        "Points are credited only when an order reaches DELIVERED, never for cancelled orders.",
     },
     {
       icon: Truck,

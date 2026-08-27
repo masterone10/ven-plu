@@ -108,7 +108,9 @@ export const updateMyProfile = createServerFn({ method: "POST" })
  * endpoint cannot be used to enumerate customer identities.
  */
 export const checkReferralCode = createServerFn({ method: "GET" })
-  .inputValidator((data: unknown) => z.object({ code: z.string().trim().min(4).max(16) }).parse(data))
+  .inputValidator((data: unknown) =>
+    z.object({ code: z.string().trim().min(4).max(16) }).parse(data),
+  )
   .handler(async ({ data }): Promise<{ valid: boolean }> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: exists, error } = await supabaseAdmin.rpc("referral_code_exists", {

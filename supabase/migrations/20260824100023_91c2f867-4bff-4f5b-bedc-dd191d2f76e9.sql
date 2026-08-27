@@ -1,7 +1,7 @@
 -- ============ ENUMS ============
 CREATE TYPE public.app_role AS ENUM ('CUSTOMER', 'ADMIN');
 CREATE TYPE public.payment_method AS ENUM ('CASH', 'POINTS');
-CREATE TYPE public.order_funding_mode AS ENUM ('CASH_ONLY', 'POINTS_ONLY');
+CREATE TYPE public.order_funding_mode AS ENUM ('CASH_ONLY', 'POINTS_ONLY', 'MIXED');
 CREATE TYPE public.order_status AS ENUM ('PENDING_CONFIRMATION','CONFIRMED','PROCESSING','SHIPPED','DELIVERED','CANCELLED');
 CREATE TYPE public.points_transaction_type AS ENUM (
   'EARN_PURCHASE','EARN_REFERRAL','REDEEM_PRODUCT','REDEEM_SHIPPING',
@@ -325,8 +325,8 @@ CREATE POLICY "product_images_admin_all" ON public.product_images FOR ALL TO aut
 -- ============ STORE SETTINGS ============
 CREATE TABLE public.store_settings (
   id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
-  global_shipping_price NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (global_shipping_price >= 0),
-  shipping_points_price INTEGER NOT NULL DEFAULT 0 CHECK (shipping_points_price >= 0),
+  global_shipping_price NUMERIC(12,2) NOT NULL DEFAULT 80.00 CHECK (global_shipping_price >= 0),
+  shipping_points_price INTEGER NOT NULL DEFAULT 400 CHECK (shipping_points_price >= 0),
   free_shipping_points_threshold INTEGER NOT NULL DEFAULT 0 CHECK (free_shipping_points_threshold >= 0),
   expected_delivery_duration TEXT NOT NULL DEFAULT '2-5 days',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -341,7 +341,7 @@ CREATE POLICY "store_settings_admin_write" ON public.store_settings FOR ALL TO a
 CREATE TRIGGER store_settings_updated_at BEFORE UPDATE ON public.store_settings
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 INSERT INTO public.store_settings (id, global_shipping_price, shipping_points_price, free_shipping_points_threshold, expected_delivery_duration)
-VALUES (TRUE, 60.00, 0, 500, '2-5 days');
+VALUES (TRUE, 80.00, 400, 0, '2-5 days');
 
 -- ============ CART ============
 CREATE TABLE public.carts (

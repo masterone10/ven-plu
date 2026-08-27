@@ -22,8 +22,9 @@ describe("funding mode", () => {
     expect(deriveFundingMode(["POINTS", "POINTS"])).toBe("POINTS_ONLY");
   });
 
-  it("rejects combining cash and points in one order", () => {
-    expect(() => deriveFundingMode(["CASH", "POINTS"])).toThrow(PointsRuleError);
+  it("is MIXED when combining cash and points components", () => {
+    expect(deriveFundingMode(["CASH", "POINTS"])).toBe("MIXED");
+    expect(deriveFundingMode(["POINTS", "CASH"])).toBe("MIXED");
   });
 
   it("rejects an order with no payable component", () => {
@@ -40,19 +41,31 @@ describe("points pricing", () => {
 
   it("falls back to the product default points price", () => {
     expect(
-      resolvePointsPrice({ pointsEnabled: true, defaultPointsPrice: 500, variantPointsPrice: null }),
+      resolvePointsPrice({
+        pointsEnabled: true,
+        defaultPointsPrice: 500,
+        variantPointsPrice: null,
+      }),
     ).toBe(500);
   });
 
   it("returns null when the product is not points-enabled", () => {
     expect(
-      resolvePointsPrice({ pointsEnabled: false, defaultPointsPrice: 500, variantPointsPrice: 420 }),
+      resolvePointsPrice({
+        pointsEnabled: false,
+        defaultPointsPrice: 500,
+        variantPointsPrice: 420,
+      }),
     ).toBeNull();
   });
 
   it("rejects non-integer and negative points prices", () => {
     expect(() =>
-      resolvePointsPrice({ pointsEnabled: true, defaultPointsPrice: 12.5, variantPointsPrice: null }),
+      resolvePointsPrice({
+        pointsEnabled: true,
+        defaultPointsPrice: 12.5,
+        variantPointsPrice: null,
+      }),
     ).toThrow(PointsRuleError);
     expect(() =>
       resolvePointsPrice({ pointsEnabled: true, defaultPointsPrice: -1, variantPointsPrice: null }),
@@ -87,7 +100,9 @@ describe("balance safety", () => {
 describe("shipping eligibility", () => {
   it("is eligible at or above the threshold", () => {
     expect(isPointsShippingEligible({ balance: 500, freeShippingPointsThreshold: 500 })).toBe(true);
-    expect(isPointsShippingEligible({ balance: 499, freeShippingPointsThreshold: 500 })).toBe(false);
+    expect(isPointsShippingEligible({ balance: 499, freeShippingPointsThreshold: 500 })).toBe(
+      false,
+    );
   });
 });
 

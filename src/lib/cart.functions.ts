@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   CheckoutError,
@@ -114,10 +116,10 @@ export const getCart = createServerFn({ method: "GET" })
     const pointsBalance = balanceResult.data?.balance ?? 0;
     const settingsRow = settingsResult.data;
     const settings = {
-      globalShippingPrice: Number(settingsRow?.global_shipping_price ?? 0),
-      shippingPointsPrice: settingsRow?.shipping_points_price ?? 0,
-      freeShippingPointsThreshold: settingsRow?.free_shipping_points_threshold ?? 0,
-      expectedDeliveryDuration: settingsRow?.expected_delivery_duration ?? "",
+      globalShippingPrice: Number(settingsRow?.global_shipping_price ?? 80),
+      shippingPointsPrice: Number(settingsRow?.shipping_points_price ?? 400),
+      freeShippingPointsThreshold: Number(settingsRow?.free_shipping_points_threshold ?? 0),
+      expectedDeliveryDuration: settingsRow?.expected_delivery_duration ?? "2-5 days",
     };
 
     let items: CartItemView[] = [];
@@ -137,7 +139,7 @@ export const getCart = createServerFn({ method: "GET" })
       settings,
       pointsShippingUnlocked: isPointsShippingUnlocked({
         balance: pointsBalance,
-        freeShippingPointsThreshold: settings.freeShippingPointsThreshold,
+        shippingPointsPrice: settings.shippingPointsPrice,
       }),
     };
   });
@@ -213,10 +215,7 @@ function toCartItemView(row: CartRow): CartItemView {
   };
 }
 
-async function ensureCart(
-  supabase: { from: (table: string) => any },
-  userId: string,
-): Promise<string> {
+async function ensureCart(supabase: SupabaseClient<Database>, userId: string): Promise<string> {
   const existing = await supabase.from("carts").select("id").eq("user_id", userId).maybeSingle();
   if (existing.error) throw new Error(existing.error.message);
   if (existing.data) return existing.data.id as string;

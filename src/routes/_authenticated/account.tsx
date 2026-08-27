@@ -109,10 +109,7 @@ function AccountPage() {
           </Card>
         </div>
 
-        <ProfileCard
-          profile={data.profile}
-          currentLocale={locale}
-        />
+        <ProfileCard profile={data.profile} currentLocale={locale} />
 
         <Card>
           <CardHeader>
@@ -129,7 +126,9 @@ function AccountPage() {
                     <div>
                       <p className="text-sm font-medium">{ledgerLabel(entry.type)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(entry.createdAt).toLocaleString(locale === "ar" ? "ar-EG" : "en-GB")}
+                        {new Date(entry.createdAt).toLocaleString(
+                          locale === "ar" ? "ar-EG" : "en-GB",
+                        )}
                       </p>
                     </div>
                     <Badge variant={entry.delta > 0 ? "default" : "secondary"}>
@@ -166,8 +165,7 @@ function ProfileCard({
   }, [profile.fullName, profile.phone]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      saveProfile({ data: { fullName, phone, locale: currentLocale } }),
+    mutationFn: () => saveProfile({ data: { fullName, phone, locale: currentLocale } }),
     onSuccess: () => {
       toast.success(t("saved"));
       setLocale(currentLocale);

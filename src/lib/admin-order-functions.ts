@@ -3,11 +3,17 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { toCheckoutErrorCode } from "@/lib/checkout-rules";
 
-/** 
+/**
  * Admin-created order input schema.
- * Differs from customer checkout: uses admin-supplied fields, 
+ * Differs from customer checkout: uses admin-supplied fields,
  * authorizes via has_role(ADMIN), and follows Admin Order Entry contract.
  */
+const adminOrderItemSchema = z.object({
+  variantId: z.string().uuid(),
+  quantity: z.number().int().min(1).max(99),
+  productPaymentMethod: z.enum(["CASH", "POINTS"]),
+});
+
 const adminPlaceOrderSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120),
   customerName: z.string().trim().min(2).max(120),
@@ -15,6 +21,7 @@ const adminPlaceOrderSchema = z.object({
     .string()
     .trim()
     .regex(/^01\d{9}$/, "Egyptian mobile numbers must be 11 digits starting with 01"),
+  customerSecondaryPhone: z.string().trim().max(20).optional().default(""),
   customerWhatsApp: z.string().trim().max(20).optional().default(""),
   shippingAddress: z.object({
     governorate: z.string().trim().min(2).max(80),
@@ -22,7 +29,8 @@ const adminPlaceOrderSchema = z.object({
     street: z.string().trim().min(3).max(200),
     notes: z.string().trim().max(300).optional().default(""),
   }),
-  productSearch: z.string().trim().min(1).max(200),
+  customerNotes: z.string().trim().max(500).optional().default(""),
+  items: z.array(adminOrderItemSchema).min(1),
   shippingPaymentMethod: z.enum(["CASH", "POINTS"]),
   fingerprint: z.string().trim().min(1).max(2000),
 });
@@ -36,39 +44,87 @@ const adminPlaceOrderSchema = z.object({
 export const adminPlaceOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => adminPlaceOrderSchema.parse(data))
-  .handler(async ({ context, data }): Promise<{ orderId: string; orderNumber: string; created: boolean }> => {
-    // Verify admin authorization
-    const { data: isAdmin, error: adminError } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId,
-      _role: "ADMIN",
-    });
-    
-    if (adminError) throw new Error("INTERNAL_ERROR");
-    if (isAdmin !== true) throw new Error("FORBIDDEN");
+  .handler(
+    async ({
+      context,
+      data,
+    }): Promise<{ orderId: string; orderNumber: string; created: boolean }> => {
+      // Verify admin authorization
+      const { data: isAdmin, error: adminError } = await context.supabase.rpc("has_role", {
+        _user_id: context.userId,
+        _role: "ADMIN",
+      });
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      if (adminError) throw new Error("INTERNAL_ERROR");
+      if (isAdmin !== true) throw new Error("FORBIDDEN");
 
-    const { data: rows, error } = await supabaseAdmin.rpc("checkout_place_order", {
-      _user_id: context.userId,
-      _idempotency_key: data.idempotencyKey,
-      _customer_name: data.customerName,
-      _customer_phone: data.customerPhone,
-      _shipping_address: data.shippingAddress,
-      _shipping_payment_method: data.shippingPaymentMethod,
-      _fingerprint: data.fingerprint,
-    });
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    if (error) throw new Error(toCheckoutErrorCode(error.message));
+      // Populate admin cart with the requested items
+      let cartId: string;
+      const existingCart = await supabaseAdmin
+        .from("carts")
+        .select("id")
+        .eq("user_id", context.userId)
+        .maybeSingle();
 
-    const row = Array.isArray(rows) ? rows[0] : rows;
-    if (!row) throw new Error("INTERNAL_ERROR");
+      if (existingCart.data) {
+        cartId = existingCart.data.id;
+        await supabaseAdmin.from("cart_items").delete().eq("cart_id", cartId);
+      } else {
+        const createdCart = await supabaseAdmin
+          .from("carts")
+          .insert({ user_id: context.userId })
+          .select("id")
+          .single();
+        if (createdCart.error) throw new Error(createdCart.error.message);
+        cartId = createdCart.data.id;
+      }
 
-    return {
-      orderId: row.order_id as string,
-      orderNumber: row.order_number as string,
-      created: row.created as boolean,
-    };
-  });
+      const cartInserts = data.items.map((item) => ({
+        cart_id: cartId,
+        variant_id: item.variantId,
+        quantity: item.quantity,
+        product_payment_method: item.productPaymentMethod,
+      }));
+
+      const insertResult = await supabaseAdmin.from("cart_items").insert(cartInserts);
+      if (insertResult.error) throw new Error(insertResult.error.message);
+
+      const addressWithNotes = {
+        ...data.shippingAddress,
+        notes: [
+          data.shippingAddress.notes,
+          data.customerSecondaryPhone ? `SecPhone: ${data.customerSecondaryPhone}` : "",
+          data.customerWhatsApp ? `WA: ${data.customerWhatsApp}` : "",
+          data.customerNotes ? `Notes: ${data.customerNotes}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      };
+
+      const { data: rows, error } = await supabaseAdmin.rpc("checkout_place_order", {
+        _user_id: context.userId,
+        _idempotency_key: data.idempotencyKey,
+        _customer_name: data.customerName,
+        _customer_phone: data.customerPhone,
+        _shipping_address: addressWithNotes,
+        _shipping_payment_method: data.shippingPaymentMethod,
+        _fingerprint: data.fingerprint,
+      });
+
+      if (error) throw new Error(toCheckoutErrorCode(error.message));
+
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (!row) throw new Error("INTERNAL_ERROR");
+
+      return {
+        orderId: row.order_id as string,
+        orderNumber: row.order_number as string,
+        created: row.created as boolean,
+      };
+    },
+  );
 
 export type AdminOrderConfirmation = {
   orderNumber: string;
@@ -109,7 +165,7 @@ export const adminGetOrderConfirmation = createServerFn({ method: "GET" })
       _user_id: context.userId,
       _role: "ADMIN",
     });
-    
+
     if (adminError) throw new Error("INTERNAL_ERROR");
     if (isAdmin !== true) throw new Error("FORBIDDEN");
 

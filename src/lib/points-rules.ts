@@ -8,7 +8,7 @@
 export const PAYMENT_METHODS = ["CASH", "POINTS"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-export const ORDER_FUNDING_MODES = ["CASH_ONLY", "POINTS_ONLY"] as const;
+export const ORDER_FUNDING_MODES = ["CASH_ONLY", "POINTS_ONLY", "MIXED"] as const;
 export type OrderFundingMode = (typeof ORDER_FUNDING_MODES)[number];
 
 export const POINTS_TRANSACTION_TYPES = [
@@ -36,7 +36,7 @@ function assertInteger(value: number, label: string): void {
 
 /**
  * Derives the order funding mode from the payment method of every payable
- * component. Combining CASH and POINTS in one order is rejected outright.
+ * component. CASH_ONLY, POINTS_ONLY, and MIXED are supported.
  */
 export function deriveFundingMode(components: PaymentMethod[]): OrderFundingMode {
   if (components.length === 0) {
@@ -45,9 +45,7 @@ export function deriveFundingMode(components: PaymentMethod[]): OrderFundingMode
   const hasCash = components.includes("CASH");
   const hasPoints = components.includes("POINTS");
   if (hasCash && hasPoints) {
-    throw new PointsRuleError(
-      "mixed cash and points funding is not supported: every payable component must use the same method",
-    );
+    return "MIXED";
   }
   return hasPoints ? "POINTS_ONLY" : "CASH_ONLY";
 }

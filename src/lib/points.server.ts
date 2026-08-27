@@ -59,7 +59,6 @@ export async function applyPointsTransaction(input: ApplyPointsInput): Promise<A
 
   const { data, error } = await supabase.rpc("apply_points_transaction", args);
 
-
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error("points transaction returned no result");
@@ -124,7 +123,9 @@ export function refundRedemption(input: {
 }
 
 export async function assertAdmin(
-  supabase: { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }> },
+  supabase: {
+    rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
+  },
   userId: string,
 ): Promise<void> {
   const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "ADMIN" });

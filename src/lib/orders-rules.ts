@@ -9,7 +9,7 @@
  * Funding modes are CASH_ONLY and POINTS_ONLY only — no third, combined mode.
  */
 
-export const ORDER_FUNDING_MODES = ["CASH_ONLY", "POINTS_ONLY"] as const;
+export const ORDER_FUNDING_MODES = ["CASH_ONLY", "POINTS_ONLY", "MIXED"] as const;
 export type OrderFundingMode = (typeof ORDER_FUNDING_MODES)[number];
 
 export const ORDER_STATUSES = [
@@ -44,7 +44,7 @@ export function orderNotFound(): OrderRetrievalError {
 }
 
 export function assertFundingMode(value: string): OrderFundingMode {
-  if (value === "CASH_ONLY" || value === "POINTS_ONLY") return value;
+  if (value === "CASH_ONLY" || value === "POINTS_ONLY" || value === "MIXED") return value;
   throw new OrderRetrievalError("INTERNAL_ERROR");
 }
 
@@ -197,7 +197,9 @@ export function normalizeShippingAddress(value: unknown): ShippingAddress {
 }
 
 export function formatShippingAddress(address: ShippingAddress): string {
-  return [address.street, address.city, address.governorate].filter((part) => part.length > 0).join(", ");
+  return [address.street, address.city, address.governorate]
+    .filter((part) => part.length > 0)
+    .join(", ");
 }
 
 /** Cash/points composition of a stored order, derived from snapshot values. */

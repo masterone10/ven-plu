@@ -127,11 +127,8 @@ BEGIN
 
   IF _item_count = 0 THEN RAISE EXCEPTION 'CART_EMPTY'; END IF;
 
-  -- 15..17 shipping configuration + eligibility
+  -- 15..17 shipping configuration
   IF _shipping_payment_method = 'POINTS' THEN
-    IF _balance < _settings.free_shipping_points_threshold THEN
-      RAISE EXCEPTION 'SHIPPING_POINTS_NOT_ELIGIBLE';
-    END IF;
     _shipping_points := _settings.shipping_points_price;
     _shipping_cash := 0;
     _has_points := TRUE;
@@ -141,12 +138,14 @@ BEGIN
     IF _shipping_cash > 0 THEN _has_cash := TRUE; END IF;
   END IF;
 
-  -- 22 aggregate funding mode: CASH_ONLY or POINTS_ONLY, never mixed
+  -- 22 aggregate funding mode: CASH_ONLY, POINTS_ONLY, or MIXED
   IF _has_cash AND _has_points THEN
-    RAISE EXCEPTION 'VALIDATION_ERROR'
-      USING DETAIL = 'an order must be entirely cash or entirely points';
+    _funding := 'MIXED';
+  ELSIF _has_points THEN
+    _funding := 'POINTS_ONLY';
+  ELSE
+    _funding := 'CASH_ONLY';
   END IF;
-  _funding := CASE WHEN _has_points THEN 'POINTS_ONLY' ELSE 'CASH_ONLY' END;
 
   -- 23 points balance
   IF (_points_items + _shipping_points) > _balance THEN

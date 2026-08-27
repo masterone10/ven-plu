@@ -187,7 +187,9 @@ function ProductCard({ product }: { product: CatalogProduct }) {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">{name}</CardTitle>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-semibold">{formatEGP(variant?.cashPrice ?? product.cashPrice)}</span>
+          <span className="font-semibold">
+            {formatEGP(variant?.cashPrice ?? product.cashPrice)}
+          </span>
           {canUsePoints ? (
             <Badge variant="secondary" className="gap-1">
               <Coins className="size-3" />
