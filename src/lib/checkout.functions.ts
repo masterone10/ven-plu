@@ -16,12 +16,18 @@ const placeOrderSchema = z.object({
     .string()
     .trim()
     .regex(/^01\d{9}$/, "Egyptian mobile numbers must be 11 digits starting with 01"),
-  shippingAddress: z.object({
-    governorate: z.string().trim().min(2).max(80),
-    city: z.string().trim().min(2).max(80),
-    street: z.string().trim().min(3).max(200),
-    notes: z.string().trim().max(300).optional().default(""),
-  }),
+  shippingAddress: z
+    .object({
+      address: z.string().trim().min(3).max(300).optional(),
+      street: z.string().trim().min(3).max(300).optional(),
+      secondaryPhone: z.string().trim().max(30).optional().default(""),
+      notes: z.string().trim().max(500).optional().default(""),
+      governorate: z.string().trim().max(80).optional().default(""),
+      city: z.string().trim().max(80).optional().default(""),
+    })
+    .refine((data) => Boolean(data.address || data.street), {
+      message: "Address is required",
+    }),
   shippingPaymentMethod: z.enum(["CASH", "POINTS"]),
   fingerprint: z.string().trim().min(1).max(2000),
 });

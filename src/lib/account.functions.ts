@@ -50,8 +50,19 @@ export const getAccountOverview = createServerFn({ method: "GET" })
     if (balanceResult.error) throw new Error(balanceResult.error.message);
     if (ledgerResult.error) throw new Error(ledgerResult.error.message);
 
-    const profile = profileResult.data;
-    if (!profile) throw new Error("Profile not found");
+    let profile = profileResult.data;
+    if (!profile) {
+      const { ensureUserProfile } = await import("@/lib/profile-bootstrap.server");
+      const bootstrapped = await ensureUserProfile({ userId, claims });
+      profile = {
+        id: bootstrapped.id,
+        full_name: bootstrapped.fullName,
+        phone: bootstrapped.phone,
+        locale: bootstrapped.locale,
+        referral_code: bootstrapped.referralCode,
+        referred_by: bootstrapped.referredBy,
+      };
+    }
 
     return {
       profile: {

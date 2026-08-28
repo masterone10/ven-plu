@@ -3,13 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Coins, Loader2, Minus, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  getCart,
-  removeCartItem,
-  setCartPaymentMethod,
-  updateCartItem,
-  type CartItemView,
-} from "@/lib/cart.functions";
+import { getCart, removeCartItem, updateCartItem, type CartItemView } from "@/lib/cart.functions";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +38,6 @@ function CartPage() {
 
   const update = useServerFn(updateCartItem);
   const remove = useServerFn(removeCartItem);
-  const setMethod = useServerFn(setCartPaymentMethod);
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["cart"] });
   const onError = (error: unknown) =>
@@ -61,18 +54,10 @@ function CartPage() {
     onSuccess: invalidate,
     onError,
   });
-  const bulkMutation = useMutation({
-    mutationFn: (paymentMethod: "CASH" | "POINTS") => setMethod({ data: { paymentMethod } }),
-    onSuccess: invalidate,
-    onError,
-  });
 
   const items = data?.items ?? [];
   const cashTotal = items.reduce((sum, item) => sum + item.lineCashTotal, 0);
   const pointsTotal = items.reduce((sum, item) => sum + item.linePointsTotal, 0);
-  const hasConflictingMethods =
-    items.some((i) => i.paymentMethod === "CASH") &&
-    items.some((i) => i.paymentMethod === "POINTS");
   const blocked = items.some((item) => item.issue !== null);
 
   return (
@@ -134,37 +119,7 @@ function CartPage() {
                   <span className="font-semibold">{formatPoints(data?.pointsBalance ?? 0)}</span>
                 </div>
 
-                {hasConflictingMethods ? (
-                  <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs">
-                    <p>
-                      {locale === "ar"
-                        ? "الطلب لا يقبل الخلط: خليه كله كاش أو كله نقاط."
-                        : "An order cannot mix funding: make it all cash or all points."}
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={bulkMutation.isPending}
-                        onClick={() => bulkMutation.mutate("CASH")}
-                      >
-                        {locale === "ar" ? "الكل كاش" : "All cash"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          bulkMutation.isPending || items.some((item) => !item.pointsEnabled)
-                        }
-                        onClick={() => bulkMutation.mutate("POINTS")}
-                      >
-                        {locale === "ar" ? "الكل نقاط" : "All points"}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
-                <Button asChild className="w-full" disabled={hasConflictingMethods || blocked}>
+                <Button asChild className="w-full" disabled={blocked}>
                   <Link to="/checkout">{locale === "ar" ? "إتمام الطلب" : "Checkout"}</Link>
                 </Button>
               </CardContent>

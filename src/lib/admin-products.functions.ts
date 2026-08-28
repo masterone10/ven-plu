@@ -57,7 +57,7 @@ export const listAdminProducts = createServerFn({ method: "GET" })
           .from("products")
           .select(
             `id, slug, name_en, name_ar, category_id, cash_price, points_enabled,
-           default_points_price, is_active,
+           default_points_price, delivery_points_reward, is_active,
            product_variants ( id, sku, name_en, name_ar, cash_price, points_price, stock, is_active ),
            product_images ( url, alt_en, alt_ar, is_primary, sort_order, variant_id )`,
           )

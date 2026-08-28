@@ -8,6 +8,7 @@
  * Funding modes are CASH_ONLY and POINTS_ONLY only.
  */
 
+export type { OrderFundingMode, PaymentMethod } from "./points-rules";
 import type { OrderFundingMode, PaymentMethod } from "./points-rules";
 import {
   PointsRuleError,

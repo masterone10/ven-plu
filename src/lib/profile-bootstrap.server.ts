@@ -46,18 +46,18 @@ export async function ensureUserProfile(input: {
   if (!profileRecord) {
     // Extract metadata from verified claims or auth.admin
     const userMetadata =
-      (claims?.user_metadata as Record<string, unknown> | undefined) ??
-      (claims?.raw_user_meta_data as Record<string, unknown> | undefined) ??
+      (claims?.["user_metadata"] as Record<string, unknown> | undefined) ??
+      (claims?.["raw_user_meta_data"] as Record<string, unknown> | undefined) ??
       {};
 
     let fullName =
-      (userMetadata.full_name as string | undefined) ??
-      (userMetadata.name as string | undefined) ??
-      (userMetadata.user_name as string | undefined) ??
-      (claims?.name as string | undefined) ??
+      (userMetadata["full_name"] as string | undefined) ??
+      (userMetadata["name"] as string | undefined) ??
+      (userMetadata["user_name"] as string | undefined) ??
+      (claims?.["name"] as string | undefined) ??
       null;
-    let phone = (userMetadata.phone as string | undefined) ?? null;
-    let locale = (userMetadata.locale as string | undefined) ?? "ar";
+    let phone = (userMetadata["phone"] as string | undefined) ?? null;
+    let locale = (userMetadata["locale"] as string | undefined) ?? "ar";
     if (locale !== "ar" && locale !== "en") {
       locale = "ar";
     }
@@ -66,12 +66,15 @@ export async function ensureUserProfile(input: {
       try {
         const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
         if (authUser?.user?.user_metadata) {
-          const m = authUser.user.user_metadata;
+          const m = authUser.user.user_metadata as Record<string, unknown>;
           fullName =
-            (m.full_name as string) ?? (m.name as string) ?? (m.user_name as string) ?? null;
-          phone = (m.phone as string) ?? null;
-          if (m.locale === "ar" || m.locale === "en") {
-            locale = m.locale;
+            (m["full_name"] as string | undefined) ??
+            (m["name"] as string | undefined) ??
+            (m["user_name"] as string | undefined) ??
+            null;
+          phone = (m["phone"] as string | undefined) ?? null;
+          if (m["locale"] === "ar" || m["locale"] === "en") {
+            locale = m["locale"] as string;
           }
         }
       } catch {
@@ -85,7 +88,9 @@ export async function ensureUserProfile(input: {
     if (phone === "") phone = null;
 
     let referredBy: string | null = null;
-    const incomingRef = (userMetadata.referral_code as string | undefined)?.trim()?.toUpperCase();
+    const incomingRef = (userMetadata["referral_code"] as string | undefined)
+      ?.trim()
+      ?.toUpperCase();
     if (incomingRef) {
       const { data: refUser } = await supabaseAdmin
         .from("profiles")
