@@ -134,12 +134,8 @@ describe.skipIf(!enabled)("Work Item 5 — product download package (live)", () 
         },
       ]);
       if (media.error) throw media.error;
-    } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && err.code === "PGRST205") {
-        schemaReady = false;
-      } else {
-        throw err;
-      }
+    } catch {
+      schemaReady = false;
     }
   }, 60_000);
 

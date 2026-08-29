@@ -1,28 +1,29 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import {
-  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Boxes,
-  Coins,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
   Download,
-  Edit2,
+  ExternalLink,
   FileArchive,
   FileSpreadsheet,
   FolderTree,
   Image as ImageIcon,
   LayoutDashboard,
+  Layers,
   Loader2,
   Package,
-  PackageCheck,
   Plus,
-  Power,
+  RefreshCw,
   Save,
   Search,
-  Settings,
-  ShoppingBag,
-  Sparkles,
+  ShoppingCart,
   Trash2,
   Truck,
   X,
@@ -66,67 +67,131 @@ import {
   saveAdminProduct,
   setAdminProductActive,
 } from "@/lib/admin-products.functions";
+import { listAllAdminOrders } from "@/lib/admin-orders-list.functions";
 import { downloadProductPackage } from "@/lib/product-package.functions";
-import { getAdminDashboardMetrics } from "@/lib/admin-operations.functions";
+import { AdminDashboardOverview } from "@/components/admin-dashboard-overview";
+import { AdminInventoryView } from "@/components/admin-inventory-view";
 import { AdminShippingSettings } from "@/components/admin-shipping-settings";
-import { AdminCategoriesTab } from "@/components/admin-categories-tab";
-import { AdminInventoryTab } from "@/components/admin-inventory-tab";
-import { AdminOrdersTab } from "@/components/admin-orders-tab";
-import { AdminExcelTab } from "@/components/admin-excel-tab";
+import { AdminCategoriesView } from "@/components/admin-categories-view";
+import { AdminOrdersView } from "@/components/admin-orders-view";
+import { AdminCatalogIO } from "@/components/admin-catalog-io";
 import { AdminImageUploader } from "@/components/admin-image-uploader";
 
 export const Route = createFileRoute("/_authenticated/admin/products")({
   head: () => ({
     meta: [
-      { title: "لوحة تحكم المشرف — VEN+ Admin" },
+      { title: "VEN+ Admin — Product Management" },
       {
         name: "description",
-        content: "إدارة المنتجات، المتغيرات، الصور، التصنيفات، المخزون، وطلبات العملاء.",
+        content:
+          "Operational VEN+ catalog workspace: product information, media, variants, cash and points prices, stock and publication state.",
       },
     ],
   }),
   component: AdminProductsPage,
 });
 
+type AdminTab =
+  "dashboard" | "products" | "categories" | "inventory" | "orders" | "shipping" | "io";
+
 function AdminProductsPage() {
   const { locale, formatEGP, formatPoints } = useI18n();
   const queryClient = useQueryClient();
 
   const fetchList = useServerFn(listAdminProducts);
-  const fetchSingle = useServerFn(getAdminProduct);
+  const fetchOrdersFn = useServerFn(listAllAdminOrders);
   const saveProductFn = useServerFn(saveAdminProduct);
   const setActiveFn = useServerFn(setAdminProductActive);
   const downloadPkgFn = useServerFn(downloadProductPackage);
-  const fetchMetricsFn = useServerFn(getAdminDashboardMetrics);
 
-  const { data, isPending } = useQuery({
+  const {
+    data,
+    isPending,
+    error,
+    refetch: refetchProducts,
+  } = useQuery({
     queryKey: ["admin-products"],
     queryFn: () => fetchList(),
   });
 
-  const { data: metrics } = useQuery({
-    queryKey: ["admin-dashboard-metrics"],
-    queryFn: () => fetchMetricsFn(),
+  const { data: ordersData, refetch: refetchOrders } = useQuery({
+    queryKey: ["admin-orders"],
+    queryFn: () => fetchOrdersFn(),
   });
 
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
 
   const products = useMemo(() => data?.products ?? [], [data?.products]);
   const categories = useMemo(() => data?.categories ?? [], [data?.categories]);
+  const orders = useMemo(() => ordersData?.orders ?? [], [ordersData?.orders]);
+
+  // Low stock counter for badges
+  const lowStockCount = useMemo(() => {
+    let count = 0;
+    for (const p of products) {
+      for (const v of p.variants) {
+        if (v.isActive && v.stock <= 5) count++;
+      }
+    }
+    return count;
+  }, [products]);
+
+  // Pending orders counter for badge
+  const pendingOrdersCount = useMemo(() => {
+    return orders.filter(
+      (o) =>
+        o.status === "PENDING_CONFIRMATION" ||
+        o.status === "CONFIRMED" ||
+        o.status === "PROCESSING",
+    ).length;
+  }, [orders]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
-      if (selectedCategory !== "ALL" && p.categoryId !== selectedCategory) return false;
+      if (selectedCategory !== "ALL" && p.categoryId !== selectedCategory) {
+        return false;
+      }
+      if (statusFilter === "ACTIVE" && !p.isActive) {
+        return false;
+      }
+      if (statusFilter === "INACTIVE" && p.isActive) {
+        return false;
+      }
       return matchesSearch(p, searchTerm);
     });
-  }, [products, searchTerm, selectedCategory]);
+  }, [products, searchTerm, selectedCategory, statusFilter]);
 
-  const handleDownloadZip = async (productId: string, productName: string) => {
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / itemsPerPage));
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredProducts.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredProducts, currentPage, itemsPerPage]);
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: (input: { productId: string; isActive: boolean }) => setActiveFn({ data: input }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      void queryClient.invalidateQueries({ queryKey: ["catalog"] });
+      toast.success(
+        locale === "ar" ? "تم تحديث حالة المنتج بنجاح" : "Product status updated successfully",
+      );
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to update product status");
+    },
+  });
+
+  const handleDownloadPackage = async (productId: string, productName: string) => {
     setDownloadingId(productId);
     try {
       const res = await downloadPkgFn({ data: { productId } });
@@ -146,545 +211,779 @@ function AdminProductsPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success(
-        locale === "ar"
-          ? `تم تحميل حزمة الوسائط لـ ${productName}`
-          : `Media package downloaded for ${productName}`,
+        locale === "ar" ? `تم تحميل حزمة ${productName}` : `Downloaded package for ${productName}`,
       );
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to download media package");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to download package");
     } finally {
       setDownloadingId(null);
     }
   };
 
-  const handleToggleProductActive = async (productId: string, current: boolean) => {
-    try {
-      await setActiveFn({ data: { productId, isActive: !current } });
-      toast.success(locale === "ar" ? "تم تحديث حالة نشر المنتج" : "Product status updated");
-      void queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-      void queryClient.invalidateQueries({ queryKey: ["catalog-payload"] });
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to update product status");
-    }
+  const handleRefreshAll = () => {
+    void refetchProducts();
+    void refetchOrders();
+    toast.success(locale === "ar" ? "تم تحديث البيانات" : "Data refreshed");
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <SiteHeader />
-      <main className="mx-auto w-full max-w-7xl px-4 py-8 space-y-6">
-        {/* Admin Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-5">
-          <div>
-            <h1 className="text-3xl font-black tracking-tight text-foreground">
-              {locale === "ar" ? "لوحة تحكم الإدارة" : "Admin Workspace"}
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {locale === "ar"
-                ? "إدارة المنتجات، الصور والوسائط، التصنيفات، المخزون، وطلبات العملاء."
-                : "Manage products, media assets, categories, inventory, and customer orders."}
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background">
+        <SiteHeader />
+        <main className="mx-auto w-full max-w-6xl px-4 py-10">
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-center">
+            <h2 className="text-lg font-bold text-destructive">
+              {locale === "ar" ? "خطأ في تحميل لوحة الإدارة" : "Admin Access Error"}
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {error instanceof Error ? error.message : "Access forbidden or unauthorized"}
             </p>
           </div>
+        </main>
+      </div>
+    );
+  }
 
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setIsCreating(true)} className="gap-1.5 rounded-xl font-bold">
-              <Plus className="size-4" />
-              {locale === "ar" ? "إضافة منتج جديد" : "New Product"}
-            </Button>
+  const navItems = [
+    {
+      id: "dashboard" as AdminTab,
+      labelAr: "لوحة التحكم",
+      labelEn: "Dashboard",
+      icon: LayoutDashboard,
+      badge: null,
+    },
+    {
+      id: "products" as AdminTab,
+      labelAr: "إدارة المنتجات",
+      labelEn: "Products",
+      icon: Package,
+      badge: products.length > 0 ? String(products.length) : null,
+    },
+    {
+      id: "categories" as AdminTab,
+      labelAr: "التصنيفات",
+      labelEn: "Categories",
+      icon: Layers,
+      badge: categories.length > 0 ? String(categories.length) : null,
+    },
+    {
+      id: "inventory" as AdminTab,
+      labelAr: "إدارة المخزون",
+      labelEn: "Inventory",
+      icon: Boxes,
+      badge: lowStockCount > 0 ? `${lowStockCount}` : null,
+      badgeVariant: lowStockCount > 0 ? ("destructive" as const) : ("secondary" as const),
+    },
+    {
+      id: "orders" as AdminTab,
+      labelAr: "إدارة الطلبات",
+      labelEn: "Orders",
+      icon: ClipboardList,
+      badge: pendingOrdersCount > 0 ? `${pendingOrdersCount}` : null,
+      badgeVariant: pendingOrdersCount > 0 ? ("default" as const) : ("secondary" as const),
+    },
+    {
+      id: "shipping" as AdminTab,
+      labelAr: "إعدادات الشحن",
+      labelEn: "Shipping",
+      icon: Truck,
+      badge: null,
+    },
+    {
+      id: "io" as AdminTab,
+      labelAr: "الاستيراد والتصدير",
+      labelEn: "Catalog I/O",
+      icon: FileSpreadsheet,
+      badge: null,
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background" dir="rtl">
+      <SiteHeader />
+
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row">
+        {/* Right Sidebar (Fixed in RTL desktop layout) */}
+        <aside className="w-full shrink-0 lg:w-64">
+          <div className="sticky top-20 space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  {locale === "ar" ? "نظام إدارة المتجر" : "Store Management"}
+                </span>
+                <h2 className="text-lg font-black text-foreground">VEN+ Admin</h2>
+              </div>
+              <Badge variant="outline" className="text-[10px] text-primary">
+                v2.0
+              </Badge>
+            </div>
+
+            {/* Navigation List */}
+            <nav className="flex flex-col gap-1">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveTab(item.id)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-start text-sm font-medium transition-all ${
+                      isActive
+                        ? "bg-[#0f4c5c] text-white shadow-sm"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon
+                        className={`size-4 ${isActive ? "text-white" : "text-muted-foreground"}`}
+                      />
+                      <span>{locale === "ar" ? item.labelAr : item.labelEn}</span>
+                    </div>
+                    {item.badge && (
+                      <Badge
+                        variant={isActive ? "secondary" : item.badgeVariant || "outline"}
+                        className={`text-[10px] px-1.5 py-0.5 ${
+                          isActive ? "bg-white/20 text-white border-transparent" : ""
+                        }`}
+                      >
+                        {item.badge}
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="border-t border-border pt-3">
+              <Link
+                to="/"
+                className="flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              >
+                <div className="flex items-center gap-2">
+                  <ExternalLink className="size-3.5" />
+                  <span>{locale === "ar" ? "معاينة المتجر العام" : "View Live Store"}</span>
+                </div>
+                <span>←</span>
+              </Link>
+            </div>
           </div>
-        </div>
+        </aside>
 
-        {/* Navigation Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-3 sm:grid-cols-6 h-auto p-1 rounded-2xl bg-muted/50">
-            <TabsTrigger value="dashboard" className="rounded-xl py-2 gap-1.5 text-xs font-bold">
-              <LayoutDashboard className="size-4" />
-              <span>{locale === "ar" ? "الرئيسية" : "Dashboard"}</span>
-            </TabsTrigger>
-            <TabsTrigger value="products" className="rounded-xl py-2 gap-1.5 text-xs font-bold">
-              <Package className="size-4" />
-              <span>{locale === "ar" ? "المنتجات" : "Products"}</span>
-            </TabsTrigger>
-            <TabsTrigger value="categories" className="rounded-xl py-2 gap-1.5 text-xs font-bold">
-              <FolderTree className="size-4" />
-              <span>{locale === "ar" ? "التصنيفات" : "Categories"}</span>
-            </TabsTrigger>
-            <TabsTrigger value="inventory" className="rounded-xl py-2 gap-1.5 text-xs font-bold">
-              <Boxes className="size-4" />
-              <span>{locale === "ar" ? "المخزون" : "Inventory"}</span>
-            </TabsTrigger>
-            <TabsTrigger value="orders" className="rounded-xl py-2 gap-1.5 text-xs font-bold">
-              <ShoppingBag className="size-4" />
-              <span>{locale === "ar" ? "الطلبات" : "Orders"}</span>
-            </TabsTrigger>
-            <TabsTrigger value="shipping" className="rounded-xl py-2 gap-1.5 text-xs font-bold">
-              <Truck className="size-4" />
-              <span>{locale === "ar" ? "الشحن" : "Shipping"}</span>
-            </TabsTrigger>
-          </TabsList>
+        {/* Main Content Area */}
+        <main className="min-w-0 flex-1">
+          {/* TAB 1: DASHBOARD */}
+          {activeTab === "dashboard" && (
+            <AdminDashboardOverview
+              products={products}
+              orders={orders}
+              categoriesCount={categories.length}
+              onNavigateTab={(tab) => setActiveTab(tab as AdminTab)}
+              onOpenCreateProduct={() => {
+                setIsCreating(true);
+                setEditingProductId(null);
+              }}
+              onRefresh={handleRefreshAll}
+            />
+          )}
 
-          {/* TAB 1: DASHBOARD METRICS */}
-          <TabsContent value="dashboard" className="space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card className="rounded-2xl border-border/80 bg-card">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-muted-foreground block">
-                      {locale === "ar" ? "إجمالي المنتجات" : "Total Products"}
-                    </span>
-                    <span className="text-2xl font-black">{metrics?.totalProducts ?? 0}</span>
-                  </div>
-                  <Package className="size-8 text-primary opacity-80" />
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border-border/80 bg-card">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-muted-foreground block">
-                      {locale === "ar" ? "الطلبات قيد المتابعة" : "Pending Orders"}
-                    </span>
-                    <span className="text-2xl font-black text-amber-600 dark:text-amber-400">
-                      {metrics?.pendingOrders ?? 0}
-                    </span>
-                  </div>
-                  <ShoppingBag className="size-8 text-amber-500 opacity-80" />
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border-border/80 bg-card">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-muted-foreground block">
-                      {locale === "ar" ? "تنبيهات انخفاض المخزون" : "Low Stock Alerts"}
-                    </span>
-                    <span className="text-2xl font-black text-destructive">
-                      {metrics?.lowStockCount ?? 0}
-                    </span>
-                  </div>
-                  <AlertTriangle className="size-8 text-destructive opacity-80" />
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-2xl border-border/80 bg-card">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-muted-foreground block">
-                      {locale === "ar" ? "إجمالي الطلبات المسلمة" : "Delivered Orders"}
-                    </span>
-                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                      {metrics?.deliveredOrders ?? 0}
-                    </span>
-                  </div>
-                  <PackageCheck className="size-8 text-emerald-500 opacity-80" />
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Quick Actions Panel */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="rounded-2xl border-border/80 bg-card">
-                <CardHeader>
-                  <CardTitle className="text-base font-bold">
-                    {locale === "ar" ? "روابط وإجراءات سريعة" : "Quick Shortcuts"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-2 gap-3">
+          {/* TAB 2: PRODUCTS CATALOG */}
+          {activeTab === "products" && (
+            <div className="space-y-6">
+              {/* Header Actions */}
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl">
+                    {locale === "ar" ? "كتالوج المنتجات" : "Product Catalog"}
+                  </h1>
+                  <p className="text-xs text-muted-foreground">
+                    {locale === "ar"
+                      ? "إدارة المنتجات، المتغيرات، الأسعار، المخزون، وحزم التحميل."
+                      : "Manage catalog products, variants, pricing, stock, and download packages."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <AdminCatalogIO />
                   <Button
-                    variant="outline"
-                    onClick={() => setIsCreating(true)}
-                    className="justify-start gap-2 h-11 rounded-xl text-xs"
+                    onClick={() => {
+                      setIsCreating(true);
+                      setEditingProductId(null);
+                    }}
+                    className="gap-2 bg-[#e65100] text-white hover:bg-[#c44400]"
                   >
-                    <Plus className="size-4 text-primary" />
-                    {locale === "ar" ? "إضافة منتج" : "Add Product"}
+                    <Plus className="size-4" />
+                    {locale === "ar" ? "إضافة منتج جديد" : "New Product"}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setActiveTab("categories")}
-                    className="justify-start gap-2 h-11 rounded-xl text-xs"
-                  >
-                    <FolderTree className="size-4 text-accent" />
-                    {locale === "ar" ? "إدارة التصنيفات" : "Manage Categories"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setActiveTab("inventory")}
-                    className="justify-start gap-2 h-11 rounded-xl text-xs"
-                  >
-                    <Boxes className="size-4 text-amber-500" />
-                    {locale === "ar" ? "تعديل المخزون" : "Adjust Inventory"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setActiveTab("orders")}
-                    className="justify-start gap-2 h-11 rounded-xl text-xs"
-                  >
-                    <ShoppingBag className="size-4 text-emerald-500" />
-                    {locale === "ar" ? "سجل الطلبات" : "View Orders"}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Excel Import / Export module */}
-              <AdminExcelTab />
-            </div>
-          </TabsContent>
-
-          {/* TAB 2: PRODUCTS TABLE */}
-          <TabsContent value="products" className="space-y-6">
-            {/* Search & Category Filter */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                <Input
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder={
-                    locale === "ar"
-                      ? "ابحث باسم المنتج أو كود المتغير (SKU)..."
-                      : "Search by product name or variant SKU..."
-                  }
-                  className="ps-10 h-11 rounded-xl text-sm border-border bg-card shadow-sm"
-                />
+                </div>
               </div>
 
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="h-11 w-full sm:w-56 rounded-xl text-xs">
-                  <SelectValue placeholder={locale === "ar" ? "كل التصنيفات" : "All categories"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">
-                    {locale === "ar" ? "جميع التصنيفات" : "All Categories"}
-                  </SelectItem>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {locale === "ar" ? c.nameAr : c.nameEn}
+              {/* Filters and Search Bar */}
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="relative">
+                  <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder={
+                      locale === "ar"
+                        ? "بحث بالاسم، الرابط، التصنيف..."
+                        : "Search by name, slug, category..."
+                    }
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="ps-9"
+                  />
+                </div>
+
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(val) => {
+                    setSelectedCategory(val);
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue
+                      placeholder={locale === "ar" ? "كل التصنيفات" : "All Categories"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">
+                      {locale === "ar" ? "كل التصنيفات" : "All Categories"}
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Products List Table */}
-            {isPending ? (
-              <div className="flex min-h-[30vh] items-center justify-center">
-                <Loader2 className="size-8 animate-spin text-primary" />
-              </div>
-            ) : filteredProducts.length === 0 ? (
-              <div className="p-12 text-center text-muted-foreground border border-dashed rounded-2xl">
-                <Package className="size-12 text-muted-foreground/40 mx-auto mb-3" />
-                <h3 className="text-base font-bold">
-                  {locale === "ar" ? "لا توجد منتجات مطابقة" : "No products found"}
-                </h3>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-border/80 bg-card shadow-sm">
-                <table className="w-full text-xs text-start">
-                  <thead className="border-b border-border bg-muted/40 text-muted-foreground">
-                    <tr>
-                      <th className="p-3 text-start">{locale === "ar" ? "المنتج" : "Product"}</th>
-                      <th className="p-3 text-start">{locale === "ar" ? "التصنيف" : "Category"}</th>
-                      <th className="p-3 text-start">
-                        {locale === "ar" ? "السعر الكاش" : "Cash Price"}
-                      </th>
-                      <th className="p-3 text-start">{locale === "ar" ? "النقاط" : "Points"}</th>
-                      <th className="p-3 text-start">
-                        {locale === "ar" ? "مكافأة الاستلام" : "Reward"}
-                      </th>
-                      <th className="p-3 text-start">
-                        {locale === "ar" ? "المتغيرات" : "Variants"}
-                      </th>
-                      <th className="p-3 text-start">{locale === "ar" ? "الحالة" : "Status"}</th>
-                      <th className="p-3 text-end">{locale === "ar" ? "إجراءات" : "Actions"}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredProducts.map((p) => (
-                      <tr key={p.id} className="hover:bg-muted/20 transition">
-                        <td className="p-3">
-                          <div className="flex items-center gap-3">
-                            <div className="size-10 rounded-lg overflow-hidden bg-muted/40 border border-border shrink-0 flex items-center justify-center">
-                              {p.imageUrl ? (
-                                <img src={p.imageUrl} alt="" className="size-full object-cover" />
-                              ) : (
-                                <Package className="size-5 text-muted-foreground/40" />
-                              )}
-                            </div>
-                            <div>
-                              <span className="font-bold text-foreground block">
-                                {locale === "ar" ? p.nameAr : p.nameEn}
-                              </span>
-                              <code className="text-[10px] font-mono text-muted-foreground">
-                                {p.slug}
-                              </code>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3 font-medium">
-                          {p.categoryNameAr ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              {locale === "ar" ? p.categoryNameAr : p.categoryNameEn}
-                            </Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="p-3 font-bold">{formatEGP(p.cashPrice)}</td>
-                        <td className="p-3 font-medium">
-                          {p.pointsEnabled && p.defaultPointsPrice ? (
-                            <Badge variant="secondary" className="gap-1 text-[10px]">
-                              <Coins className="size-3 text-accent" />
-                              {formatPoints(p.defaultPointsPrice)}
-                            </Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="p-3 font-semibold text-emerald-600 dark:text-emerald-400">
-                          +{p.deliveryPointsReward} نقطة
-                        </td>
-                        <td className="p-3">
-                          <span className="font-mono">{p.variants.length}</span>
-                        </td>
-                        <td className="p-3">
-                          <Badge variant={p.isActive ? "default" : "secondary"}>
-                            {p.isActive
-                              ? locale === "ar"
-                                ? "منشور"
-                                : "Published"
-                              : locale === "ar"
-                                ? "معطل"
-                                : "Draft"}
-                          </Badge>
-                        </td>
-                        <td className="p-3 text-end">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDownloadZip(p.id, p.nameAr)}
-                              disabled={downloadingId === p.id}
-                              title={locale === "ar" ? "تحميل حزمة الوسائط" : "Download Media ZIP"}
-                              className="size-8 rounded-lg"
-                            >
-                              {downloadingId === p.id ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <FileArchive className="size-3.5 text-accent" />
-                              )}
-                            </Button>
-
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleToggleProductActive(p.id, p.isActive)}
-                              title={locale === "ar" ? "تبديل حالة النشر" : "Toggle Active"}
-                              className={`size-8 rounded-lg ${p.isActive ? "text-amber-600" : "text-emerald-600"}`}
-                            >
-                              <Power className="size-3.5" />
-                            </Button>
-
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setEditingProductId(p.id)}
-                              className="size-8 rounded-lg"
-                            >
-                              <Edit2 className="size-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {locale === "ar" ? cat.nameAr : cat.nameEn}
+                      </SelectItem>
                     ))}
-                  </tbody>
-                </table>
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={statusFilter}
+                  onValueChange={(val: "ALL" | "ACTIVE" | "INACTIVE") => {
+                    setStatusFilter(val);
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={locale === "ar" ? "حالة النشر" : "Status"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{locale === "ar" ? "الكل" : "All Status"}</SelectItem>
+                    <SelectItem value="ACTIVE">
+                      {locale === "ar" ? "المنتجات النشطة" : "Active Only"}
+                    </SelectItem>
+                    <SelectItem value="INACTIVE">
+                      {locale === "ar" ? "المنتجات المعطلة" : "Inactive Only"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            )}
-          </TabsContent>
+
+              {/* Products Table */}
+              {isPending ? (
+                <div className="flex h-64 items-center justify-center">
+                  <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : filteredProducts.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                    <Package className="size-10 text-muted-foreground" />
+                    <p className="mt-4 text-base font-semibold">
+                      {locale === "ar" ? "لا توجد منتجات مطابقة" : "No products found"}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {locale === "ar"
+                        ? "جرّب تغيير عبارة البحث أو الفلتر."
+                        : "Try adjusting your search or category filter."}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-start text-sm">
+                      <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase text-muted-foreground">
+                        <tr>
+                          <th className="px-4 py-3 text-start">
+                            {locale === "ar" ? "المنتج" : "Product"}
+                          </th>
+                          <th className="px-4 py-3 text-start">
+                            {locale === "ar" ? "التصنيف" : "Category"}
+                          </th>
+                          <th className="px-4 py-3 text-start">
+                            {locale === "ar" ? "سعر الكاش" : "Cash Price"}
+                          </th>
+                          <th className="px-4 py-3 text-start">
+                            {locale === "ar" ? "النقاط" : "Points"}
+                          </th>
+                          <th className="px-4 py-3 text-start">
+                            {locale === "ar" ? "المتغيرات" : "Variants"}
+                          </th>
+                          <th className="px-4 py-3 text-start">
+                            {locale === "ar" ? "إجمالي المخزون" : "Total Stock"}
+                          </th>
+                          <th className="px-4 py-3 text-start">
+                            {locale === "ar" ? "الحالة" : "Status"}
+                          </th>
+                          <th className="px-4 py-3 text-end">
+                            {locale === "ar" ? "الإجراءات" : "Actions"}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {paginatedProducts.map((product) => {
+                          const isDownloading = downloadingId === product.id;
+                          return (
+                            <tr key={product.id} className="transition-colors hover:bg-muted/30">
+                              {/* Product info */}
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="size-12 shrink-0 overflow-hidden rounded-md border border-border bg-muted/50">
+                                    {product.imageUrl ? (
+                                      <img
+                                        src={product.imageUrl}
+                                        alt={locale === "ar" ? product.nameAr : product.nameEn}
+                                        className="size-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="flex size-full items-center justify-center text-muted-foreground">
+                                        <ImageIcon className="size-5" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-foreground">
+                                      {locale === "ar" ? product.nameAr : product.nameEn}
+                                    </div>
+                                    <div className="font-mono text-xs text-muted-foreground">
+                                      {product.slug}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Category */}
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {product.categoryId
+                                  ? locale === "ar"
+                                    ? product.categoryNameAr
+                                    : product.categoryNameEn
+                                  : "—"}
+                              </td>
+
+                              {/* Cash price */}
+                              <td className="px-4 py-3 font-medium">
+                                {formatEGP(product.cashPrice)}
+                              </td>
+
+                              {/* Points */}
+                              <td className="px-4 py-3">
+                                {product.pointsEnabled ? (
+                                  <Badge variant="secondary" className="font-mono text-xs">
+                                    {product.pointsPrice
+                                      ? formatPoints(product.pointsPrice)
+                                      : "Enabled"}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">
+                                    {locale === "ar" ? "معطل" : "Disabled"}
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Variants count */}
+                              <td className="px-4 py-3 text-muted-foreground">
+                                <span className="font-medium text-foreground">
+                                  {product.activeVariantCount}
+                                </span>
+                                {" / "}
+                                <span>{product.variantCount}</span>
+                              </td>
+
+                              {/* Total Stock */}
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`font-semibold ${
+                                    product.totalStock === 0
+                                      ? "text-destructive"
+                                      : product.totalStock < 5
+                                        ? "text-amber-500 font-bold"
+                                        : "text-foreground"
+                                  }`}
+                                >
+                                  {product.totalStock}
+                                </span>
+                              </td>
+
+                              {/* Status */}
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    checked={product.isActive}
+                                    disabled={toggleActiveMutation.isPending}
+                                    onCheckedChange={(checked) => {
+                                      toggleActiveMutation.mutate({
+                                        productId: product.id,
+                                        isActive: checked,
+                                      });
+                                    }}
+                                  />
+                                  <span className="text-xs text-muted-foreground">
+                                    {product.isActive
+                                      ? locale === "ar"
+                                        ? "نشط"
+                                        : "Active"
+                                      : locale === "ar"
+                                        ? "غير نشط"
+                                        : "Inactive"}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Actions */}
+                              <td className="px-4 py-3 text-end">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isDownloading}
+                                    onClick={() =>
+                                      handleDownloadPackage(
+                                        product.id,
+                                        locale === "ar" ? product.nameAr : product.nameEn,
+                                      )
+                                    }
+                                    title={
+                                      locale === "ar"
+                                        ? "تحميل حزمة المنتج ZIP"
+                                        : "Download product ZIP package"
+                                    }
+                                  >
+                                    {isDownloading ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : (
+                                      <Download className="size-3.5" />
+                                    )}
+                                    <span className="sr-only sm:not-sr-only sm:ms-1.5 text-xs">
+                                      {locale === "ar" ? "حزمة" : "Package"}
+                                    </span>
+                                  </Button>
+
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditingProductId(product.id);
+                                      setIsCreating(false);
+                                    }}
+                                  >
+                                    {locale === "ar" ? "تعديل" : "Edit"}
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination Bar (10 per page) */}
+                  <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-3">
+                    <div className="text-xs text-muted-foreground">
+                      {locale === "ar"
+                        ? `عرض ${(currentPage - 1) * itemsPerPage + 1} - ${Math.min(
+                            currentPage * itemsPerPage,
+                            filteredProducts.length,
+                          )} من أصل ${filteredProducts.length} منتج`
+                        : `Showing ${(currentPage - 1) * itemsPerPage + 1} to ${Math.min(
+                            currentPage * itemsPerPage,
+                            filteredProducts.length,
+                          )} of ${filteredProducts.length} products`}
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage <= 1}
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        className="h-8 gap-1 px-2.5 text-xs"
+                      >
+                        <ChevronRight className="size-3.5 rtl:rotate-180" />
+                        {locale === "ar" ? "السابق" : "Prev"}
+                      </Button>
+                      <span className="px-2 text-xs font-semibold">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPage >= totalPages}
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        className="h-8 gap-1 px-2.5 text-xs"
+                      >
+                        {locale === "ar" ? "التالي" : "Next"}
+                        <ChevronLeft className="size-3.5 rtl:rotate-180" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* TAB 3: CATEGORIES */}
-          <TabsContent value="categories">
-            <AdminCategoriesTab />
-          </TabsContent>
+          {activeTab === "categories" && <AdminCategoriesView />}
 
           {/* TAB 4: INVENTORY */}
-          <TabsContent value="inventory">
-            <AdminInventoryTab />
-          </TabsContent>
+          {activeTab === "inventory" && (
+            <AdminInventoryView products={products} onRefresh={handleRefreshAll} />
+          )}
 
           {/* TAB 5: ORDERS */}
-          <TabsContent value="orders">
-            <AdminOrdersTab />
-          </TabsContent>
+          {activeTab === "orders" && <AdminOrdersView />}
 
           {/* TAB 6: SHIPPING SETTINGS */}
-          <TabsContent value="shipping">
-            <AdminShippingSettings />
-          </TabsContent>
-        </Tabs>
+          {activeTab === "shipping" && <AdminShippingSettings />}
 
-        {/* Product Editor Modal (For Create & Edit) */}
-        {(isCreating || editingProductId) && (
-          <ProductEditorDialog
-            productId={editingProductId}
-            categories={categories}
-            open={Boolean(isCreating || editingProductId)}
-            onClose={() => {
-              setIsCreating(false);
-              setEditingProductId(null);
-            }}
-          />
-        )}
-      </main>
+          {/* TAB 7: CATALOG I/O */}
+          {activeTab === "io" && (
+            <div className="space-y-6">
+              <div>
+                <h1 className="text-2xl font-black tracking-tight text-foreground sm:text-3xl">
+                  {locale === "ar" ? "استيراد وتصدير الكتالوج" : "Catalog Import & Export"}
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  {locale === "ar"
+                    ? "تصدير كتالوج المنتجات إلى ملف CSV أو استيراد تحديثات مجمعة."
+                    : "Export the full catalog to CSV or bulk import changes."}
+                </p>
+              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {locale === "ar" ? "أدوات CSV للكتالوج" : "Catalog CSV Operations"}
+                  </CardTitle>
+                  <CardDescription>
+                    {locale === "ar"
+                      ? "يمكنك تحميل نسخة كاملة من البيانات أو رفع ملف CSV محدث."
+                      : "Download current product data or upload an updated CSV file."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <AdminCatalogIO />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Product Editor Modal */}
+      {(isCreating || editingProductId) && (
+        <ProductEditorModal
+          productId={editingProductId}
+          categories={categories}
+          onClose={() => {
+            setEditingProductId(null);
+            setIsCreating(false);
+          }}
+          onSaved={() => {
+            setEditingProductId(null);
+            setIsCreating(false);
+            void queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+            void queryClient.invalidateQueries({ queryKey: ["catalog"] });
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/** Product Add/Edit Dialog with drag-and-drop image uploader & variant matrix */
-function ProductEditorDialog({
+function ProductEditorModal({
   productId,
   categories,
-  open,
   onClose,
+  onSaved,
 }: {
   productId: string | null;
-  categories: { id: string; nameAr: string; nameEn?: string | null }[];
-  open: boolean;
+  categories: { id: string; nameEn: string; nameAr: string; isActive: boolean }[];
   onClose: () => void;
+  onSaved: () => void;
 }) {
   const { locale } = useI18n();
-  const queryClient = useQueryClient();
-
   const fetchSingle = useServerFn(getAdminProduct);
-  const saveProductFn = useServerFn(saveAdminProduct);
+  const saveFn = useServerFn(saveAdminProduct);
 
-  const { data: initialData, isLoading } = useQuery({
+  const { data: existingData, isPending } = useQuery({
     queryKey: ["admin-product", productId],
     queryFn: () => (productId ? fetchSingle({ data: { productId } }) : null),
     enabled: Boolean(productId),
   });
 
-  const [form, setForm] = useState<ProductInput>(() => ({
-    nameAr: "",
-    nameEn: "",
-    slug: "",
-    descriptionAr: "",
-    descriptionEn: "",
-    categoryId: null,
-    cashPrice: 100,
-    pointsEnabled: true,
-    defaultPointsPrice: 500,
-    deliveryPointsReward: 50,
-    isActive: true,
-    variants: [
+  const [slug, setSlug] = useState("");
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [nameEn, setNameEn] = useState("");
+  const [nameAr, setNameAr] = useState("");
+  const [descriptionEn, setDescriptionEn] = useState("");
+  const [descriptionAr, setDescriptionAr] = useState("");
+  const [cashPrice, setCashPrice] = useState<number>(0);
+  const [pointsEnabled, setPointsEnabled] = useState(true);
+  const [defaultPointsPrice, setDefaultPointsPrice] = useState<number | null>(100);
+  const [deliveryPointsReward, setDeliveryPointsReward] = useState<number>(0);
+  const [isActive, setIsActive] = useState(true);
+
+  const [variants, setVariants] = useState<VariantInput[]>([
+    {
+      sku: "SKU-01",
+      nameEn: "Standard",
+      nameAr: "قياسي",
+      cashPrice: null,
+      pointsPrice: null,
+      stock: 10,
+      isActive: true,
+    },
+  ]);
+
+  const [media, setMedia] = useState<MediaInput[]>([]);
+
+  // Prepopulate form when editing
+  useMemo(() => {
+    if (existingData) {
+      setSlug(existingData.slug);
+      setCategoryId(existingData.categoryId);
+      setNameEn(existingData.nameEn);
+      setNameAr(existingData.nameAr);
+      setDescriptionEn(existingData.descriptionEn ?? "");
+      setDescriptionAr(existingData.descriptionAr ?? "");
+      setCashPrice(existingData.cashPrice);
+      setPointsEnabled(existingData.pointsEnabled);
+      setDefaultPointsPrice(existingData.defaultPointsPrice);
+      setDeliveryPointsReward(existingData.deliveryPointsReward ?? 0);
+      setIsActive(existingData.isActive);
+      setVariants(existingData.variants);
+      setMedia(existingData.media);
+    }
+  }, [existingData]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: ProductInput) => saveFn({ data: payload }),
+    onSuccess: () => {
+      toast.success(locale === "ar" ? "تم حفظ المنتج بنجاح" : "Product saved successfully");
+      onSaved();
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save product");
+    },
+  });
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!slug.trim()) {
+      toast.error(locale === "ar" ? "الرابط الدائم مطلوب" : "Slug is required");
+      return;
+    }
+    if (!nameEn.trim() || !nameAr.trim()) {
+      toast.error(
+        locale === "ar"
+          ? "اسم المنتج بالعربية والإنجليزية مطلوب"
+          : "Product names in English and Arabic are required",
+      );
+      return;
+    }
+    if (variants.length === 0) {
+      toast.error(
+        locale === "ar" ? "يجب إضافة متغير واحد على الأقل" : "At least one variant is required",
+      );
+      return;
+    }
+
+    const payload: ProductInput = {
+      ...(productId ? { id: productId } : {}),
+      slug: slug.trim().toLowerCase(),
+      categoryId: categoryId === "none" || !categoryId ? null : categoryId,
+      nameEn: nameEn.trim(),
+      nameAr: nameAr.trim(),
+      descriptionEn: descriptionEn.trim() || null,
+      descriptionAr: descriptionAr.trim() || null,
+      cashPrice: Number(cashPrice),
+      pointsEnabled,
+      defaultPointsPrice: pointsEnabled
+        ? defaultPointsPrice
+          ? Number(defaultPointsPrice)
+          : null
+        : null,
+      deliveryPointsReward: Number(deliveryPointsReward || 0),
+      isActive,
+      variants: variants.map((v) => ({
+        ...v,
+        sku: v.sku.trim().toUpperCase(),
+        cashPrice: v.cashPrice != null ? Number(v.cashPrice) : null,
+        pointsPrice: pointsEnabled && v.pointsPrice != null ? Number(v.pointsPrice) : null,
+        stock: Number(v.stock || 0),
+      })),
+      media: media.map((m, idx) => ({
+        ...m,
+        sortOrder: idx,
+      })),
+    };
+
+    saveMutation.mutate(payload);
+  };
+
+  const addVariant = () => {
+    const nextNum = variants.length + 1;
+    setVariants([
+      ...variants,
       {
-        sku: `SKU-${Date.now().toString().slice(-4)}`,
-        nameAr: "الافتراضي",
-        nameEn: "Default",
+        sku: `${slug.toUpperCase() || "SKU"}-VAR-${nextNum}`,
+        nameEn: `Variant ${nextNum}`,
+        nameAr: `متغير ${nextNum}`,
         cashPrice: null,
         pointsPrice: null,
         stock: 10,
         isActive: true,
       },
-    ],
-    media: [],
-  }));
-
-  const [initialized, setInitialized] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  // Sync initial product data when loaded
-  if (initialData && !initialized) {
-    setForm({
-      id: initialData.id,
-      nameAr: initialData.nameAr,
-      nameEn: initialData.nameEn,
-      slug: initialData.slug,
-      descriptionAr: initialData.descriptionAr,
-      descriptionEn: initialData.descriptionEn,
-      categoryId: initialData.categoryId,
-      cashPrice: initialData.cashPrice,
-      pointsEnabled: initialData.pointsEnabled,
-      defaultPointsPrice: initialData.defaultPointsPrice,
-      deliveryPointsReward: initialData.deliveryPointsReward,
-      isActive: initialData.isActive,
-      variants: initialData.variants.map((v) => ({
-        id: v.id,
-        sku: v.sku,
-        nameAr: v.nameAr,
-        nameEn: v.nameEn,
-        cashPrice: v.cashPrice,
-        pointsPrice: v.pointsPrice,
-        stock: v.stock,
-        isActive: v.isActive,
-      })),
-      media: initialData.media.map((img) => ({
-        id: img.id,
-        url: img.url,
-        altAr: img.altAr,
-        altEn: img.altEn,
-        variantSku: img.variantSku,
-        sortOrder: img.sortOrder,
-        isPrimary: img.isPrimary,
-      })),
-    });
-    setInitialized(true);
-  }
-
-  const handleAddVariant = () => {
-    setForm((prev) => ({
-      ...prev,
-      variants: [
-        ...prev.variants,
-        {
-          sku: `SKU-${Date.now().toString().slice(-4)}`,
-          nameAr: `متغير ${prev.variants.length + 1}`,
-          nameEn: `Variant ${prev.variants.length + 1}`,
-          cashPrice: null,
-          pointsPrice: null,
-          stock: 10,
-          isActive: true,
-        },
-      ],
-    }));
+    ]);
   };
 
-  const handleRemoveVariant = (index: number) => {
-    if (form.variants.length <= 1) {
+  const removeVariant = (index: number) => {
+    if (variants.length <= 1) {
       toast.error(
-        locale === "ar" ? "يجب توفر متغير واحد على الأقل" : "At least one variant required",
+        locale === "ar" ? "لا يمكن حذف المتغير الوحيد" : "Cannot remove the only variant",
       );
       return;
     }
-    setForm((prev) => ({
-      ...prev,
-      variants: prev.variants.filter((_, idx) => idx !== index),
-    }));
+    setVariants(variants.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.nameAr.trim()) {
-      toast.error(locale === "ar" ? "يرجى كتابة اسم المنتج بالعربية" : "Arabic name is required");
-      return;
-    }
+  const addImage = () => {
+    setMedia([
+      ...media,
+      {
+        url: "/products/scrunchie-black.jpg",
+        altEn: nameEn || "Product image",
+        altAr: nameAr || "صورة المنتج",
+        variantSku: null,
+        sortOrder: media.length,
+        isPrimary: media.length === 0,
+      },
+    ]);
+  };
 
-    setBusy(true);
-    try {
-      await saveProductFn({ data: form });
-      toast.success(locale === "ar" ? "تم حفظ بيانات المنتج بنجاح" : "Product saved successfully");
-      void queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-      void queryClient.invalidateQueries({ queryKey: ["catalog-payload"] });
-      onClose();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to save product");
-    } finally {
-      setBusy(false);
-    }
+  const removeImage = (index: number) => {
+    setMedia(media.filter((_, i) => i !== index));
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+    <Dialog open onOpenChange={() => onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto sm:p-6">
         <DialogHeader>
           <DialogTitle>
             {productId
@@ -693,72 +992,50 @@ function ProductEditorDialog({
                 : "Edit Product"
               : locale === "ar"
                 ? "إضافة منتج جديد"
-                : "Create Product"}
+                : "New Product"}
           </DialogTitle>
           <DialogDescription>
             {locale === "ar"
-              ? "بيانات المنتج، الصور، المتغيرات، الأسعار ونقاط المكافأة"
-              : "Product details, media gallery, variants matrix, and points reward"}
+              ? "قم بضبط بيانات المنتج، المتغيرات، والصور."
+              : "Configure product details, pricing, variants, and gallery media."}
           </DialogDescription>
         </DialogHeader>
 
-        {isLoading ? (
-          <div className="flex min-h-[40vh] items-center justify-center">
-            <Loader2 className="size-8 animate-spin text-primary" />
+        {isPending && productId ? (
+          <div className="flex h-64 items-center justify-center">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-6 pt-2">
+          <form onSubmit={handleSave} className="space-y-6">
             {/* General Info */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="prod-name-ar">
-                  {locale === "ar" ? "اسم المنتج بالعربية *" : "Arabic Name *"}
-                </Label>
+                <Label htmlFor="slug">{locale === "ar" ? "الرابط الدائم (Slug)" : "Slug"}</Label>
                 <Input
-                  id="prod-name-ar"
+                  id="slug"
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="e.g. vitamin-c-serum"
                   required
-                  value={form.nameAr}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      nameAr: e.target.value,
-                      slug: prev.id ? prev.slug : e.target.value.trim().replace(/\s+/g, "-"),
-                    }))
-                  }
-                  placeholder="مثال: سيروم الوجه المرطب"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="prod-name-en">
-                  {locale === "ar" ? "اسم المنتج بالإنجليزية" : "English Name"}
-                </Label>
-                <Input
-                  id="prod-name-en"
-                  value={form.nameEn}
-                  onChange={(e) => setForm((prev) => ({ ...prev, nameEn: e.target.value }))}
-                  placeholder="e.g. Hydrating Face Serum"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="prod-category">{locale === "ar" ? "التصنيف" : "Category"}</Label>
+                <Label htmlFor="category">{locale === "ar" ? "التصنيف" : "Category"}</Label>
                 <Select
-                  value={form.categoryId || "NONE"}
-                  onValueChange={(val) =>
-                    setForm((prev) => ({ ...prev, categoryId: val === "NONE" ? null : val }))
-                  }
+                  value={categoryId ?? "none"}
+                  onValueChange={(val) => setCategoryId(val === "none" ? null : val)}
                 >
-                  <SelectTrigger id="prod-category">
-                    <SelectValue
-                      placeholder={locale === "ar" ? "اختر التصنيف" : "Select Category"}
-                    />
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder={locale === "ar" ? "بدون تصنيف" : "No Category"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="NONE">{locale === "ar" ? "بدون تصنيف" : "None"}</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {locale === "ar" ? cat.nameAr : cat.nameEn}
+                    <SelectItem value="none">
+                      {locale === "ar" ? "بدون تصنيف" : "No Category"}
+                    </SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {locale === "ar" ? c.nameAr : c.nameEn}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -766,269 +1043,256 @@ function ProductEditorDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="prod-slug">
-                  {locale === "ar" ? "كود الرابط (Slug) *" : "URL Slug *"}
+                <Label htmlFor="nameEn">
+                  {locale === "ar" ? "الاسم بالإنجليزية" : "English Name"}
                 </Label>
                 <Input
-                  id="prod-slug"
+                  id="nameEn"
+                  value={nameEn}
+                  onChange={(e) => setNameEn(e.target.value)}
+                  placeholder="Vitamin C Serum"
                   required
-                  value={form.slug}
-                  onChange={(e) => setForm((prev) => ({ ...prev, slug: e.target.value }))}
-                  placeholder="hydrating-face-serum"
-                  className="font-mono text-xs"
-                />
-              </div>
-            </div>
-
-            {/* Descriptions */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="prod-desc-ar">
-                  {locale === "ar" ? "الوصف بالعربية" : "Arabic Description"}
-                </Label>
-                <Textarea
-                  id="prod-desc-ar"
-                  rows={3}
-                  value={form.descriptionAr ?? ""}
-                  onChange={(e) => setForm((prev) => ({ ...prev, descriptionAr: e.target.value }))}
-                  placeholder="وصف مميزات وطريقة استخدام المنتج..."
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="prod-desc-en">
+                <Label htmlFor="nameAr">{locale === "ar" ? "الاسم بالعربية" : "Arabic Name"}</Label>
+                <Input
+                  id="nameAr"
+                  value={nameAr}
+                  onChange={(e) => setNameAr(e.target.value)}
+                  placeholder="سيروم فيتامين سي"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="descEn">
                   {locale === "ar" ? "الوصف بالإنجليزية" : "English Description"}
                 </Label>
                 <Textarea
-                  id="prod-desc-en"
-                  rows={3}
-                  value={form.descriptionEn ?? ""}
-                  onChange={(e) => setForm((prev) => ({ ...prev, descriptionEn: e.target.value }))}
-                  placeholder="Product benefits and directions for use..."
+                  id="descEn"
+                  value={descriptionEn}
+                  onChange={(e) => setDescriptionEn(e.target.value)}
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="descAr">
+                  {locale === "ar" ? "الوصف بالعربية" : "Arabic Description"}
+                </Label>
+                <Textarea
+                  id="descAr"
+                  value={descriptionAr}
+                  onChange={(e) => setDescriptionAr(e.target.value)}
+                  rows={2}
                 />
               </div>
             </div>
 
-            {/* Pricing and Rewards */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-muted/30 border border-border/80">
-              <div className="space-y-1.5">
-                <Label htmlFor="base-cash">
-                  {locale === "ar" ? "السعر الكاش (ج.م) *" : "Cash Price (EGP) *"}
-                </Label>
-                <Input
-                  id="base-cash"
-                  type="number"
-                  min="0"
-                  required
-                  value={form.cashPrice}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, cashPrice: parseFloat(e.target.value) || 0 }))
-                  }
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="delivery-reward">
-                  {locale === "ar" ? "مكافأة الاستلام (نقاط) *" : "Delivery Points Reward *"}
-                </Label>
-                <Input
-                  id="delivery-reward"
-                  type="number"
-                  min="0"
-                  required
-                  value={form.deliveryPointsReward}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      deliveryPointsReward: parseInt(e.target.value) || 0,
-                    }))
-                  }
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="points-price">
-                  {locale === "ar" ? "سعر الشراء بالنقاط" : "Points Price"}
-                </Label>
-                <Input
-                  id="points-price"
-                  type="number"
-                  min="0"
-                  value={form.defaultPointsPrice || ""}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      defaultPointsPrice: e.target.value ? parseInt(e.target.value) : null,
-                    }))
-                  }
-                />
-              </div>
-
-              <div className="flex items-center justify-between pt-5">
-                <div className="space-y-0.5">
-                  <Label className="text-xs font-bold">
-                    {locale === "ar" ? "الشراء بالنقاط" : "Points Redemption"}
+            {/* Pricing and Points */}
+            <div className="rounded-lg border border-border bg-muted/20 p-4">
+              <h3 className="text-sm font-bold text-foreground">
+                {locale === "ar" ? "التسعير وإعدادات النقاط" : "Pricing & Points Rules"}
+              </h3>
+              <div className="mt-3 grid gap-4 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cashPrice">
+                    {locale === "ar" ? "السعر كاش (EGP)" : "Cash Price (EGP)"}
                   </Label>
+                  <Input
+                    id="cashPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={cashPrice}
+                    onChange={(e) => setCashPrice(Number(e.target.value))}
+                    required
+                  />
                 </div>
-                <Switch
-                  checked={form.pointsEnabled}
-                  onCheckedChange={(checked) =>
-                    setForm((prev) => ({ ...prev, pointsEnabled: checked }))
-                  }
-                />
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="pointsEnabled">
+                      {locale === "ar" ? "الشراء بالنقاط" : "Points Enabled"}
+                    </Label>
+                    <Switch
+                      id="pointsEnabled"
+                      checked={pointsEnabled}
+                      onCheckedChange={setPointsEnabled}
+                    />
+                  </div>
+                  {pointsEnabled && (
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder={
+                        locale === "ar" ? "سعر النقاط الافتراضي" : "Default points price"
+                      }
+                      value={defaultPointsPrice ?? ""}
+                      onChange={(e) =>
+                        setDefaultPointsPrice(e.target.value ? Number(e.target.value) : null)
+                      }
+                      className="mt-2"
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="reward">
+                    {locale === "ar" ? "مكافأة نقاط التوصيل" : "Delivery Points Reward"}
+                  </Label>
+                  <Input
+                    id="reward"
+                    type="number"
+                    min="0"
+                    value={deliveryPointsReward}
+                    onChange={(e) => setDeliveryPointsReward(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <Switch id="isActive" checked={isActive} onCheckedChange={setIsActive} />
+                <Label htmlFor="isActive" className="cursor-pointer">
+                  {isActive
+                    ? locale === "ar"
+                      ? "المنتج متاح في المتجر (Active)"
+                      : "Product is published (Active)"
+                    : locale === "ar"
+                      ? "المنتج مخفي (Inactive)"
+                      : "Product is hidden (Inactive)"}
+                </Label>
               </div>
             </div>
 
-            {/* Media Upload Section */}
-            <div className="space-y-3">
+            {/* Variants */}
+            <div className="rounded-lg border border-border p-4">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-bold flex items-center gap-1.5">
-                  <ImageIcon className="size-4 text-primary" />
-                  <span>{locale === "ar" ? "معرض الصور والأصول" : "Photo Gallery & Assets"}</span>
-                </Label>
-              </div>
-
-              <AdminImageUploader
-                media={form.media}
-                variants={form.variants}
-                onChange={(updatedMedia) => setForm((prev) => ({ ...prev, media: updatedMedia }))}
-              />
-            </div>
-
-            {/* Variants Matrix */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-bold flex items-center gap-1.5">
-                  <Boxes className="size-4 text-accent" />
-                  <span>
-                    {locale === "ar" ? "المتغيرات والخصائص (Variants)" : "Variants Matrix"}
-                  </span>
-                </Label>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground">
+                    {locale === "ar" ? "المتغيرات (Variants)" : "Variants"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {locale === "ar"
+                      ? "رمز SKU فريد، الأسعار الاختيارية الخاصة، والمخزون."
+                      : "Unique SKU, optional price overrides, and stock level."}
+                  </p>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={handleAddVariant}
-                  className="gap-1 text-xs rounded-xl"
+                  onClick={addVariant}
+                  className="gap-1"
                 >
                   <Plus className="size-3.5" />
                   {locale === "ar" ? "إضافة متغير" : "Add Variant"}
                 </Button>
               </div>
 
-              <div className="space-y-2">
-                {form.variants.map((v, index) => (
+              <div className="mt-3 space-y-3">
+                {variants.map((variant, index) => (
                   <div
                     key={index}
-                    className="grid grid-cols-1 sm:grid-cols-6 gap-2 p-3 rounded-xl border border-border/80 bg-card items-center"
+                    className="grid gap-2 rounded-md border border-border bg-muted/10 p-3 sm:grid-cols-6 sm:items-end"
                   >
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">
-                        {locale === "ar" ? "كود SKU" : "SKU"}
-                      </span>
+                      <Label className="text-xs">{locale === "ar" ? "رمز SKU" : "SKU"}</Label>
                       <Input
-                        value={v.sku}
+                        value={variant.sku}
+                        onChange={(e) => {
+                          const updated = [...variants];
+                          const item = updated[index];
+                          if (item) {
+                            item.sku = e.target.value;
+                            setVariants(updated);
+                          }
+                        }}
+                        className="mt-1 font-mono text-xs"
                         required
-                        onChange={(e) => {
-                          const next = [...form.variants];
-                          const target = next[index];
-                          if (target) {
-                            target.sku = e.target.value;
-                            setForm((prev) => ({ ...prev, variants: next }));
-                          }
-                        }}
-                        className="h-8 text-xs font-mono"
                       />
                     </div>
-
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">
-                        {locale === "ar" ? "الاسم بالعربية" : "Name (AR)"}
-                      </span>
+                      <Label className="text-xs">
+                        {locale === "ar" ? "الاسم (EN)" : "Name (EN)"}
+                      </Label>
                       <Input
-                        value={v.nameAr}
+                        value={variant.nameEn}
+                        onChange={(e) => {
+                          const updated = [...variants];
+                          const item = updated[index];
+                          if (item) {
+                            item.nameEn = e.target.value;
+                            setVariants(updated);
+                          }
+                        }}
+                        className="mt-1 text-xs"
                         required
-                        onChange={(e) => {
-                          const next = [...form.variants];
-                          const target = next[index];
-                          if (target) {
-                            target.nameAr = e.target.value;
-                            setForm((prev) => ({ ...prev, variants: next }));
-                          }
-                        }}
-                        className="h-8 text-xs"
                       />
                     </div>
-
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">
-                        {locale === "ar" ? "الاسم بالإنجليزية" : "Name (EN)"}
-                      </span>
+                      <Label className="text-xs">
+                        {locale === "ar" ? "الاسم (AR)" : "Name (AR)"}
+                      </Label>
                       <Input
-                        value={v.nameEn}
+                        value={variant.nameAr}
                         onChange={(e) => {
-                          const next = [...form.variants];
-                          const target = next[index];
-                          if (target) {
-                            target.nameEn = e.target.value;
-                            setForm((prev) => ({ ...prev, variants: next }));
+                          const updated = [...variants];
+                          const item = updated[index];
+                          if (item) {
+                            item.nameAr = e.target.value;
+                            setVariants(updated);
                           }
                         }}
-                        className="h-8 text-xs"
+                        className="mt-1 text-xs"
+                        required
                       />
                     </div>
-
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">
-                        {locale === "ar" ? "المخزون" : "Stock"}
-                      </span>
+                      <Label className="text-xs">{locale === "ar" ? "المخزون" : "Stock"}</Label>
                       <Input
                         type="number"
                         min="0"
-                        value={v.stock}
+                        value={variant.stock}
                         onChange={(e) => {
-                          const next = [...form.variants];
-                          const target = next[index];
-                          if (target) {
-                            target.stock = parseInt(e.target.value) || 0;
-                            setForm((prev) => ({ ...prev, variants: next }));
+                          const updated = [...variants];
+                          const item = updated[index];
+                          if (item) {
+                            item.stock = Number(e.target.value);
+                            setVariants(updated);
                           }
                         }}
-                        className="h-8 text-xs"
+                        className="mt-1 text-xs"
+                        required
                       />
                     </div>
-
-                    <div>
-                      <span className="text-[10px] text-muted-foreground block">
-                        {locale === "ar" ? "سعر خاص (كاش)" : "Custom Price"}
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={variant.isActive}
+                        onCheckedChange={(val) => {
+                          const updated = [...variants];
+                          const item = updated[index];
+                          if (item) {
+                            item.isActive = val;
+                            setVariants(updated);
+                          }
+                        }}
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {variant.isActive ? "Active" : "Off"}
                       </span>
-                      <Input
-                        type="number"
-                        min="0"
-                        placeholder="افتراضي"
-                        value={v.cashPrice ?? ""}
-                        onChange={(e) => {
-                          const next = [...form.variants];
-                          const target = next[index];
-                          if (target) {
-                            target.cashPrice = e.target.value ? parseFloat(e.target.value) : null;
-                            setForm((prev) => ({ ...prev, variants: next }));
-                          }
-                        }}
-                        className="h-8 text-xs"
-                      />
                     </div>
-
-                    <div className="flex items-center justify-end gap-2 pt-3 sm:pt-0">
+                    <div className="text-end">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        disabled={form.variants.length <= 1}
-                        onClick={() => handleRemoveVariant(index)}
-                        className="size-8 rounded-lg text-destructive hover:bg-destructive/10"
+                        onClick={() => removeVariant(index)}
+                        className="text-destructive hover:bg-destructive/10"
                       >
-                        <Trash2 className="size-3.5" />
+                        <Trash2 className="size-4" />
                       </Button>
                     </div>
                   </div>
@@ -1036,13 +1300,39 @@ function ProductEditorDialog({
               </div>
             </div>
 
-            <DialogFooter className="gap-2 pt-4 border-t border-border">
-              <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            {/* Media Gallery with Drag & Drop */}
+            <div className="rounded-lg border border-border p-4">
+              <div className="mb-3">
+                <h3 className="text-sm font-bold text-foreground">
+                  {locale === "ar" ? "الصور والوسائط" : "Media & Images"}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {locale === "ar"
+                    ? "اسحب وأفلت الصور من جهازك، أو أدخل روابط مباشرة، وعيّن الصورة الرئيسية واربطها بالمتغيرات."
+                    : "Drag & drop images, add direct URLs, select the primary cover image, and map to variants."}
+                </p>
+              </div>
+
+              <AdminImageUploader
+                media={media}
+                variants={variants}
+                productNameEn={nameEn}
+                productNameAr={nameAr}
+                onChange={setMedia}
+              />
+            </div>
+
+            <DialogFooter className="flex flex-row justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>
                 {locale === "ar" ? "إلغاء" : "Cancel"}
               </Button>
-              <Button type="submit" disabled={busy} className="gap-1.5 font-bold">
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                {locale === "ar" ? "حفظ المنتج" : "Save Product"}
+              <Button type="submit" disabled={saveMutation.isPending} className="gap-1.5">
+                {saveMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Save className="size-4" />
+                )}
+                {locale === "ar" ? "حفظ التغييرات" : "Save Product"}
               </Button>
             </DialogFooter>
           </form>

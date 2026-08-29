@@ -50,29 +50,42 @@ export const getAccountOverview = createServerFn({ method: "GET" })
     if (balanceResult.error) throw new Error(balanceResult.error.message);
     if (ledgerResult.error) throw new Error(ledgerResult.error.message);
 
-    let profile = profileResult.data;
-    if (!profile) {
-      const { ensureUserProfile } = await import("@/lib/profile-bootstrap.server");
-      const bootstrapped = await ensureUserProfile({ userId, claims });
-      profile = {
-        id: bootstrapped.id,
-        full_name: bootstrapped.fullName,
-        phone: bootstrapped.phone,
-        locale: bootstrapped.locale,
-        referral_code: bootstrapped.referralCode,
-        referred_by: bootstrapped.referredBy,
+    const profileRow = profileResult.data;
+    let resolvedProfile: {
+      id: string;
+      fullName: string | null;
+      phone: string | null;
+      locale: string;
+      referralCode: string;
+      referredBy: string | null;
+    };
+
+    if (profileRow) {
+      resolvedProfile = {
+        id: profileRow.id,
+        fullName: profileRow.full_name,
+        phone: profileRow.phone,
+        locale: profileRow.locale,
+        referralCode: profileRow.referral_code,
+        referredBy: profileRow.referred_by,
       };
+    } else {
+      const { ensureUserProfile } = await import("@/lib/profile-bootstrap.server");
+      resolvedProfile = await ensureUserProfile({
+        userId,
+        claims: claims as Record<string, unknown> | null,
+      });
     }
 
     return {
       profile: {
-        id: profile.id,
-        fullName: profile.full_name,
-        phone: profile.phone,
+        id: resolvedProfile.id,
+        fullName: resolvedProfile.fullName,
+        phone: resolvedProfile.phone,
         email: (claims as { email?: string } | null)?.email ?? null,
-        locale: profile.locale,
-        referralCode: profile.referral_code,
-        referredBy: profile.referred_by,
+        locale: resolvedProfile.locale,
+        referralCode: resolvedProfile.referralCode,
+        referredBy: resolvedProfile.referredBy,
       },
       pointsBalance: balanceResult.data?.balance ?? 0,
       ledger: (ledgerResult.data ?? []).map((row) => ({

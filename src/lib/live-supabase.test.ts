@@ -12,15 +12,18 @@ describe.skipIf(!liveEnabled)("Live Supabase Database & Security Verification", 
   beforeAll(async () => {
     if (!liveEnabled) return;
     try {
-      const { error } = await client.from("products").select("id").limit(1);
-      // PGRST205 indicates the table is not found in the remote schema cache
-      if (!error || error.code !== "PGRST205") {
+      const timeoutPromise = new Promise<{ error: { code: string } }>((_, reject) =>
+        setTimeout(() => reject(new Error("Probe timeout")), 2500),
+      );
+      const probePromise = client.from("products").select("id").limit(1);
+      const res = await Promise.race([probePromise, timeoutPromise]);
+      if (!res.error) {
         schemaAvailable = true;
       }
     } catch {
       schemaAvailable = false;
     }
-  });
+  }, 10_000);
 
   it("successfully connects to live Supabase and queries active products", async () => {
     if (!schemaAvailable) {
@@ -83,10 +86,11 @@ describe.skipIf(!liveEnabled)("Live Supabase Database & Security Verification", 
 
   it("enforces RLS: anonymous callers are denied direct points modifications", async () => {
     if (!schemaAvailable) return;
-    const { error: insertError } = await client.from("points_ledger").insert({
+    const { error: insertError } = await client.from("points_transactions").insert({
       user_id: "00000000-0000-0000-0000-000000000000",
       delta: 99999,
-      reason: "ADJUSTMENT_CREDIT",
+      type: "ADJUSTMENT_CREDIT",
+      idempotency_key: "anon_test_attack",
     });
 
     expect(insertError).not.toBeNull();

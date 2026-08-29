@@ -4,6 +4,7 @@ import {
   assertCategoryAssignable,
   assertProductConsistency,
   matchesSearch,
+  mediaInputSchema,
   productInputSchema,
   toAdminProductRow,
   type ProductInput,
@@ -315,5 +316,62 @@ describe("matchesSearch", () => {
     expect(matchesSearch(row, "SCRUNCHIE")).toBe(true);
     expect(matchesSearch(row, "توكات")).toBe(true);
     expect(matchesSearch(row, "mug")).toBe(false);
+  });
+});
+
+describe("mediaInputSchema & storage URL validation", () => {
+  it("accepts valid Supabase storage URLs within 2048 chars", () => {
+    const storageUrl =
+      "https://mwfdrfwrkvfhzufxejxv.supabase.co/storage/v1/object/public/product-images/products/550e8400-e29b-41d4-a716-446655440000-vitamin_c_serum.webp";
+    const parsed = mediaInputSchema.parse({
+      url: storageUrl,
+      altEn: "Vitamin C Serum",
+      altAr: "سيروم فيتامين سي",
+      variantSku: null,
+      sortOrder: 0,
+      isPrimary: true,
+    });
+    expect(parsed.url).toBe(storageUrl);
+  });
+
+  it("accepts valid external HTTPS image URLs", () => {
+    const url = "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=800&q=80";
+    const parsed = mediaInputSchema.parse({
+      url,
+      altEn: "Serum bottle",
+      altAr: null,
+      variantSku: null,
+      sortOrder: 1,
+      isPrimary: false,
+    });
+    expect(parsed.url).toBe(url);
+  });
+
+  it("rejects giant Base64 data URLs exceeding 2048 characters", () => {
+    // A typical base64 image data URL is 5,000 to 500,000+ characters
+    const fakeBase64DataUrl = "data:image/jpeg;base64," + "A".repeat(3000);
+    expect(() =>
+      mediaInputSchema.parse({
+        url: fakeBase64DataUrl,
+        altEn: "Base64 Image",
+        altAr: null,
+        variantSku: null,
+        sortOrder: 0,
+        isPrimary: true,
+      }),
+    ).toThrow(/too_big/);
+  });
+
+  it("rejects empty image URLs", () => {
+    expect(() =>
+      mediaInputSchema.parse({
+        url: "",
+        altEn: null,
+        altAr: null,
+        variantSku: null,
+        sortOrder: 0,
+        isPrimary: true,
+      }),
+    ).toThrow();
   });
 });

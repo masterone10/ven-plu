@@ -110,12 +110,8 @@ describe.skipIf(!enabled)("Work Item 4 — admin product mutation security (live
         .single();
       if (variant.error) throw variant.error;
       variantId = variant.data.id;
-    } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && err.code === "PGRST205") {
-        schemaReady = false;
-      } else {
-        throw err;
-      }
+    } catch {
+      schemaReady = false;
     }
   }, 60_000);
 

@@ -45,6 +45,13 @@ export type CartView = {
     expectedDeliveryDuration: string;
   };
   pointsShippingUnlocked: boolean;
+  customerDefaults?: {
+    fullName: string;
+    phone: string;
+    secondaryPhone: string;
+    address: string;
+    notes: string;
+  };
 };
 
 type CartRow = {
@@ -98,16 +105,25 @@ export const getCart = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<CartView> => {
     const { supabase, userId } = context;
 
-    const [cartResult, balanceResult, settingsResult] = await Promise.all([
-      supabase.from("carts").select("id").eq("user_id", userId).maybeSingle(),
-      supabase.from("points_balances").select("balance").eq("user_id", userId).maybeSingle(),
-      supabase
-        .from("store_settings")
-        .select(
-          "global_shipping_price, shipping_points_price, free_shipping_points_threshold, expected_delivery_duration",
-        )
-        .maybeSingle(),
-    ]);
+    const [cartResult, balanceResult, settingsResult, profileResult, lastOrderResult] =
+      await Promise.all([
+        supabase.from("carts").select("id").eq("user_id", userId).maybeSingle(),
+        supabase.from("points_balances").select("balance").eq("user_id", userId).maybeSingle(),
+        supabase
+          .from("store_settings")
+          .select(
+            "global_shipping_price, shipping_points_price, free_shipping_points_threshold, expected_delivery_duration",
+          )
+          .maybeSingle(),
+        supabase.from("profiles").select("full_name, phone").eq("id", userId).maybeSingle(),
+        supabase
+          .from("orders")
+          .select("customer_name, customer_phone, shipping_address")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
     if (cartResult.error) throw new Error(cartResult.error.message);
     if (balanceResult.error) throw new Error(balanceResult.error.message);
@@ -133,6 +149,25 @@ export const getCart = createServerFn({ method: "GET" })
       items = ((data ?? []) as unknown as CartRow[]).map(toCartItemView);
     }
 
+    const lastAddr = (lastOrderResult.data?.shipping_address as Record<string, unknown>) || {};
+    const customerDefaults = {
+      fullName: lastOrderResult.data?.customer_name || profileResult.data?.full_name || "",
+      phone: lastOrderResult.data?.customer_phone || profileResult.data?.phone || "",
+      secondaryPhone:
+        typeof lastAddr["secondaryPhone"] === "string"
+          ? lastAddr["secondaryPhone"]
+          : typeof lastAddr["secondary_phone"] === "string"
+            ? lastAddr["secondary_phone"]
+            : "",
+      address:
+        typeof lastAddr["address"] === "string"
+          ? lastAddr["address"]
+          : typeof lastAddr["street"] === "string"
+            ? lastAddr["street"]
+            : "",
+      notes: typeof lastAddr["notes"] === "string" ? lastAddr["notes"] : "",
+    };
+
     return {
       items,
       pointsBalance,
@@ -141,6 +176,7 @@ export const getCart = createServerFn({ method: "GET" })
         balance: pointsBalance,
         shippingPointsPrice: settings.shippingPointsPrice,
       }),
+      customerDefaults,
     };
   });
 

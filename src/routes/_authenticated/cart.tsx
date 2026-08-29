@@ -3,7 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Coins, Loader2, Minus, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { getCart, removeCartItem, updateCartItem, type CartItemView } from "@/lib/cart.functions";
+import {
+  getCart,
+  removeCartItem,
+  setCartPaymentMethod,
+  updateCartItem,
+  type CartItemView,
+} from "@/lib/cart.functions";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +44,7 @@ function CartPage() {
 
   const update = useServerFn(updateCartItem);
   const remove = useServerFn(removeCartItem);
+  const setMethod = useServerFn(setCartPaymentMethod);
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["cart"] });
   const onError = (error: unknown) =>
@@ -51,6 +58,11 @@ function CartPage() {
   });
   const removeMutation = useMutation({
     mutationFn: (itemId: string) => remove({ data: { itemId } }),
+    onSuccess: invalidate,
+    onError,
+  });
+  const bulkMutation = useMutation({
+    mutationFn: (paymentMethod: "CASH" | "POINTS") => setMethod({ data: { paymentMethod } }),
     onSuccess: invalidate,
     onError,
   });
@@ -119,7 +131,28 @@ function CartPage() {
                   <span className="font-semibold">{formatPoints(data?.pointsBalance ?? 0)}</span>
                 </div>
 
-                <Button asChild className="w-full" disabled={blocked}>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs"
+                    disabled={bulkMutation.isPending}
+                    onClick={() => bulkMutation.mutate("CASH")}
+                  >
+                    {locale === "ar" ? "الكل كاش" : "Set all to cash"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 text-xs"
+                    disabled={bulkMutation.isPending || items.some((item) => !item.pointsEnabled)}
+                    onClick={() => bulkMutation.mutate("POINTS")}
+                  >
+                    {locale === "ar" ? "الكل نقاط" : "Set all to points"}
+                  </Button>
+                </div>
+
+                <Button asChild className="w-full mt-2" disabled={blocked}>
                   <Link to="/checkout">{locale === "ar" ? "إتمام الطلب" : "Checkout"}</Link>
                 </Button>
               </CardContent>

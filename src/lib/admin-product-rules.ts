@@ -179,7 +179,6 @@ export type AdminProductRow = {
   /** Product default; variants may override. */
   pointsPrice: number | null;
   defaultPointsPrice: number | null;
-  deliveryPointsReward: number;
   variantCount: number;
   activeVariantCount: number;
   /** Server-computed from persisted variant rows, never from browser state. */
@@ -211,7 +210,6 @@ export function toAdminProductRow(
     cash_price: number | string;
     points_enabled: boolean;
     default_points_price: number | null;
-    delivery_points_reward?: number | null;
     is_active: boolean;
   },
   variants: RawVariant[],
@@ -243,7 +241,6 @@ export function toAdminProductRow(
     pointsEnabled: product.points_enabled,
     pointsPrice: product.points_enabled ? product.default_points_price : null,
     defaultPointsPrice: product.points_enabled ? product.default_points_price : null,
-    deliveryPointsReward: product.delivery_points_reward ?? 50,
     variantCount: variants.length,
     activeVariantCount: variants.filter((variant) => variant.is_active).length,
     totalStock: variants.reduce((sum, variant) => sum + (variant.stock ?? 0), 0),

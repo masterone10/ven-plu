@@ -1,8 +1,8 @@
 /**
  * VEN+ canonical points and funding rules — pure, integer-only, framework-free.
  *
- * Funding modes are CASH_ONLY and POINTS_ONLY only. No combined mode is part of the
- * canonical contract and must not be introduced anywhere.
+ * Funding modes are CASH_ONLY, POINTS_ONLY, and MIXED. Product payment and
+ * shipping payment are independent.
  */
 
 export const PAYMENT_METHODS = ["CASH", "POINTS"] as const;

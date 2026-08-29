@@ -12,10 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
-import { Route as ProductsRouteImport } from './routes/products'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 import { Route as AuthenticatedCartRouteImport } from './routes/_authenticated/cart'
 import { Route as AuthenticatedCheckoutRouteImport } from './routes/_authenticated/checkout'
+import { Route as ProductsIndexRouteImport } from './routes/products.index'
+import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
 import { Route as AuthenticatedAdminProductsRouteImport } from './routes/_authenticated/admin.products'
 import { Route as AuthenticatedOrdersIndexRouteImport } from './routes/_authenticated/orders.index'
 import { Route as AuthenticatedOrdersOrderIdRouteImport } from './routes/_authenticated/orders.$orderId'
@@ -34,11 +35,6 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProductsRoute = ProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
   id: '/account',
   path: '/account',
@@ -53,6 +49,16 @@ const AuthenticatedCheckoutRoute = AuthenticatedCheckoutRouteImport.update({
   id: '/checkout',
   path: '/checkout',
   getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const ProductsIndexRoute = ProductsIndexRouteImport.update({
+  id: '/products/',
+  path: '/products/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsSlugRoute = ProductsSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => ProductsRoute,
 } as any)
 const AuthenticatedAdminProductsRoute =
   AuthenticatedAdminProductsRouteImport.update({
@@ -76,10 +82,11 @@ const AuthenticatedOrdersOrderIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/products': typeof ProductsRoute
   '/account': typeof AuthenticatedAccountRoute
   '/cart': typeof AuthenticatedCartRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
+  '/products/$slug': typeof ProductsSlugRoute
+  '/products/': typeof ProductsIndexRoute
   '/admin/products': typeof AuthenticatedAdminProductsRoute
   '/orders/$orderId': typeof AuthenticatedOrdersOrderIdRoute
   '/orders/': typeof AuthenticatedOrdersIndexRoute
@@ -87,10 +94,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
-  '/products': typeof ProductsRoute
   '/account': typeof AuthenticatedAccountRoute
   '/cart': typeof AuthenticatedCartRoute
   '/checkout': typeof AuthenticatedCheckoutRoute
+  '/products/$slug': typeof ProductsSlugRoute
+  '/products': typeof ProductsIndexRoute
   '/admin/products': typeof AuthenticatedAdminProductsRoute
   '/orders/$orderId': typeof AuthenticatedOrdersOrderIdRoute
   '/orders': typeof AuthenticatedOrdersIndexRoute
@@ -100,10 +108,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
-  '/products': typeof ProductsRoute
   '/_authenticated/account': typeof AuthenticatedAccountRoute
   '/_authenticated/cart': typeof AuthenticatedCartRoute
   '/_authenticated/checkout': typeof AuthenticatedCheckoutRoute
+  '/products/$slug': typeof ProductsSlugRoute
+  '/products/': typeof ProductsIndexRoute
   '/_authenticated/admin/products': typeof AuthenticatedAdminProductsRoute
   '/_authenticated/orders/$orderId': typeof AuthenticatedOrdersOrderIdRoute
   '/_authenticated/orders/': typeof AuthenticatedOrdersIndexRoute
@@ -113,10 +122,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
-    | '/products'
     | '/account'
     | '/cart'
     | '/checkout'
+    | '/products/$slug'
+    | '/products/'
     | '/admin/products'
     | '/orders/$orderId'
     | '/orders/'
@@ -124,10 +134,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
-    | '/products'
     | '/account'
     | '/cart'
     | '/checkout'
+    | '/products/$slug'
+    | '/products'
     | '/admin/products'
     | '/orders/$orderId'
     | '/orders'
@@ -136,10 +147,11 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
-    | '/products'
     | '/_authenticated/account'
     | '/_authenticated/cart'
     | '/_authenticated/checkout'
+    | '/products/$slug'
+    | '/products/'
     | '/_authenticated/admin/products'
     | '/_authenticated/orders/$orderId'
     | '/_authenticated/orders/'
@@ -149,7 +161,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
-  ProductsRoute: typeof ProductsRoute
+  ProductsIndexRoute: typeof ProductsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -175,13 +187,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/products': {
-      id: '/products'
-      path: '/products'
-      fullPath: '/products'
-      preLoaderRoute: typeof ProductsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_authenticated/account': {
       id: '/_authenticated/account'
       path: '/account'
@@ -202,6 +207,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/checkout'
       preLoaderRoute: typeof AuthenticatedCheckoutRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/products/': {
+      id: '/products/'
+      path: '/products'
+      fullPath: '/products/'
+      preLoaderRoute: typeof ProductsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products/$slug': {
+      id: '/products/$slug'
+      path: '/$slug'
+      fullPath: '/products/$slug'
+      preLoaderRoute: typeof ProductsSlugRouteImport
+      parentRoute: typeof ProductsRoute
     }
     '/_authenticated/admin/products': {
       id: '/_authenticated/admin/products'
@@ -252,7 +271,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
-  ProductsRoute: ProductsRoute,
+  ProductsIndexRoute: ProductsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

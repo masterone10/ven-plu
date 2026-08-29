@@ -57,7 +57,7 @@ export const listAdminProducts = createServerFn({ method: "GET" })
           .from("products")
           .select(
             `id, slug, name_en, name_ar, category_id, cash_price, points_enabled,
-           default_points_price, delivery_points_reward, is_active,
+           default_points_price, is_active,
            product_variants ( id, sku, name_en, name_ar, cash_price, points_price, stock, is_active ),
            product_images ( url, alt_en, alt_ar, is_primary, sort_order, variant_id )`,
           )
@@ -380,6 +380,121 @@ export const updateAdminShippingSettings = createServerFn({ method: "POST" })
       shippingPointsPrice: Number(updated.shipping_points_price),
       expectedDeliveryDuration: updated.expected_delivery_duration,
     };
+  });
+
+export const updateAdminVariantStock = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        variantId: z.string().uuid(),
+        newStock: z.number().int().min(0).max(1_000_000),
+        reason: z.string().max(200).optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ context, data }): Promise<{ variantId: string; stock: number }> => {
+    await assertAdmin(context);
+    const { supabase } = context;
+
+    const { data: updated, error } = await supabase
+      .from("product_variants")
+      .update({
+        stock: data.newStock,
+      })
+      .eq("id", data.variantId)
+      .select("id, stock")
+      .maybeSingle();
+
+    if (error) throw new AdminProductError("INTERNAL_ERROR");
+    if (!updated) throw new AdminProductError("PRODUCT_NOT_FOUND");
+
+    return {
+      variantId: updated.id,
+      stock: updated.stock,
+    };
+  });
+
+export const uploadProductMedia = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        fileName: z.string().min(1).max(200),
+        contentType: z.string().min(1).max(100),
+        base64Data: z.string().min(1),
+      })
+      .parse(data),
+  )
+  .handler(async ({ context, data }): Promise<{ url: string; path: string }> => {
+    await assertAdmin(context);
+
+    const validMimes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/svg+xml",
+      "image/jpg",
+    ];
+    if (!validMimes.includes(data.contentType.toLowerCase())) {
+      throw new AdminProductError("VALIDATION_ERROR");
+    }
+
+    const base64Clean = data.base64Data.replace(/^data:image\/[a-zA-Z+]+;base64,/, "");
+    const buffer = Buffer.from(base64Clean, "base64");
+
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new AdminProductError("VALIDATION_ERROR");
+    }
+
+    const ext = data.fileName.split(".").pop()?.toLowerCase() || "jpg";
+    const safeBase = data.fileName
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .slice(0, 40);
+    const uniqueId = crypto.randomUUID();
+    const filePath = `products/${uniqueId}-${safeBase}.${ext}`;
+
+    const { error: uploadError } = await context.supabase.storage
+      .from("product-images")
+      .upload(filePath, buffer, {
+        contentType: data.contentType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("Storage upload error:", uploadError);
+      throw new AdminProductError("INTERNAL_ERROR");
+    }
+
+    const { data: urlData } = context.supabase.storage
+      .from("product-images")
+      .getPublicUrl(filePath);
+
+    return {
+      url: urlData.publicUrl,
+      path: filePath,
+    };
+  });
+
+export const deleteProductMedia = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        path: z.string().min(1).max(500),
+      })
+      .parse(data),
+  )
+  .handler(async ({ context, data }): Promise<{ success: boolean }> => {
+    await assertAdmin(context);
+    const { error } = await context.supabase.storage.from("product-images").remove([data.path]);
+    if (error) {
+      console.error("Storage delete error:", error);
+      throw new AdminProductError("INTERNAL_ERROR");
+    }
+    return { success: true };
   });
 
 function mapWriteError(error: { code?: string; message?: string }, field: "slug" | "sku") {

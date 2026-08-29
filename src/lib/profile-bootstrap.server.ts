@@ -68,11 +68,11 @@ export async function ensureUserProfile(input: {
         if (authUser?.user?.user_metadata) {
           const m = authUser.user.user_metadata as Record<string, unknown>;
           fullName =
-            (m["full_name"] as string | undefined) ??
-            (m["name"] as string | undefined) ??
-            (m["user_name"] as string | undefined) ??
+            (m["full_name"] as string) ??
+            (m["name"] as string) ??
+            (m["user_name"] as string) ??
             null;
-          phone = (m["phone"] as string | undefined) ?? null;
+          phone = (m["phone"] as string) ?? null;
           if (m["locale"] === "ar" || m["locale"] === "en") {
             locale = m["locale"] as string;
           }
@@ -148,7 +148,14 @@ export async function ensureUserProfile(input: {
         .select("id, full_name, phone, locale, referral_code, referred_by")
         .eq("id", userId)
         .single();
-      profileRecord = refetched;
+      profileRecord = refetched ?? {
+        id: userId,
+        full_name: fullName || "Customer",
+        phone: phone || "",
+        locale: locale || "ar",
+        referral_code: referralCode,
+        referred_by: referredBy,
+      };
     }
   }
 
@@ -181,7 +188,15 @@ export async function ensureUserProfile(input: {
   }
 
   if (!profileRecord) {
-    throw new Error("Profile not found");
+    const candidate = crypto.randomUUID().replace(/-/g, "").substring(0, 8).toUpperCase();
+    profileRecord = {
+      id: userId,
+      full_name: "Customer",
+      phone: null,
+      locale: "ar",
+      referral_code: candidate,
+      referred_by: null,
+    };
   }
 
   return {

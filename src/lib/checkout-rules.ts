@@ -5,10 +5,10 @@
  * correct totals and eligibility, and so the rules are unit-testable. The
  * server always recalculates: nothing here is trusted at checkout time.
  *
- * Funding modes are CASH_ONLY and POINTS_ONLY only.
+ * Funding modes are CASH_ONLY, POINTS_ONLY, and MIXED. Product payment and
+ * shipping payment are independent.
  */
 
-export type { OrderFundingMode, PaymentMethod } from "./points-rules";
 import type { OrderFundingMode, PaymentMethod } from "./points-rules";
 import {
   PointsRuleError,

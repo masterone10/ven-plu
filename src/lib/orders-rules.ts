@@ -6,7 +6,7 @@
  * never consulted: historical names, SKUs and unit prices come from the
  * snapshot written at checkout time.
  *
- * Funding modes are CASH_ONLY and POINTS_ONLY only — no third, combined mode.
+ * Funding modes are CASH_ONLY, POINTS_ONLY, and MIXED (when product and shipping payment methods differ).
  */
 
 export const ORDER_FUNDING_MODES = ["CASH_ONLY", "POINTS_ONLY", "MIXED"] as const;

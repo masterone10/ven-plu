@@ -130,4 +130,36 @@ describe("Admin Order Entry schema & validation rules", () => {
 
     expect(() => adminPlaceOrderSchema.parse(zeroQtyPayload)).toThrow();
   });
+
+  it("formats order export CSV with UTF-8 BOM and escapes special characters", () => {
+    function escapeCsv(val: string | number | boolean | null | undefined): string {
+      if (val === null || val === undefined) return "";
+      const str = String(val);
+      if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    }
+
+    const testOrder = {
+      order_number: "VP-1001",
+      customer_name: 'محمد "أحمد", المهندس',
+      notes: "يرجى الاتصال قبل الوصول\nفي الصباح",
+      cash_total: 450.5,
+    };
+
+    const row = [
+      escapeCsv(testOrder.order_number),
+      escapeCsv(testOrder.customer_name),
+      escapeCsv(testOrder.notes),
+      escapeCsv(testOrder.cash_total),
+    ].join(",");
+
+    expect(row).toContain('"محمد ""أحمد"", المهندس"');
+    expect(row).toContain('"يرجى الاتصال قبل الوصول\nفي الصباح"');
+    expect(row.startsWith("VP-1001")).toBe(true);
+
+    const fullContent = "\uFEFF" + row;
+    expect(fullContent.charCodeAt(0)).toBe(0xfeff);
+  });
 });

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Json } from "@/integrations/supabase/types";
 import { toCheckoutErrorCode } from "@/lib/checkout-rules";
 
 export type PlacedOrder = {
@@ -19,15 +20,13 @@ const placeOrderSchema = z.object({
   shippingAddress: z
     .object({
       address: z.string().trim().min(3).max(300).optional(),
-      street: z.string().trim().min(3).max(300).optional(),
-      secondaryPhone: z.string().trim().max(30).optional().default(""),
-      notes: z.string().trim().max(500).optional().default(""),
+      street: z.string().trim().max(300).optional(),
+      secondaryPhone: z.string().trim().max(20).optional().default(""),
+      notes: z.string().trim().max(300).optional().default(""),
       governorate: z.string().trim().max(80).optional().default(""),
       city: z.string().trim().max(80).optional().default(""),
     })
-    .refine((data) => Boolean(data.address || data.street), {
-      message: "Address is required",
-    }),
+    .passthrough(),
   shippingPaymentMethod: z.enum(["CASH", "POINTS"]),
   fingerprint: z.string().trim().min(1).max(2000),
 });
@@ -50,7 +49,7 @@ export const placeOrder = createServerFn({ method: "POST" })
       _idempotency_key: data.idempotencyKey,
       _customer_name: data.customerName,
       _customer_phone: data.customerPhone,
-      _shipping_address: data.shippingAddress,
+      _shipping_address: data.shippingAddress as Json,
       _shipping_payment_method: data.shippingPaymentMethod,
       _fingerprint: data.fingerprint,
     });
