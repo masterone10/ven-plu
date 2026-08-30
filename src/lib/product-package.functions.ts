@@ -29,7 +29,7 @@ export const downloadProductPackage = createServerFn({ method: "POST" })
 
       if (error) throw new ProductPackageError("INTERNAL_ERROR");
       if (!prod) throw new ProductPackageError("PRODUCT_NOT_FOUND");
-      if (!prod.is_active) throw new ProductPackageError("FORBIDDEN");
+      if (!prod.is_active) throw new ProductPackageError("PRODUCT_INACTIVE");
     }
 
     const { buildProductPackage } = await import("@/lib/product-package.server");

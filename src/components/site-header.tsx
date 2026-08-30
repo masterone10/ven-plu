@@ -1,36 +1,19 @@
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Coins, Languages, Moon, Sun } from "lucide-react";
+import { Languages, Moon, Sparkles, Sun, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme-provider";
 import { useI18n } from "@/lib/i18n";
 import { useSession } from "@/hooks/use-session";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { usePointsBalance } from "@/hooks/use-points-balance";
 import { supabase } from "@/integrations/supabase/client";
 
 export function SiteHeader() {
-  const { t, locale, toggleLocale } = useI18n();
+  const { t, toggleLocale, formatPoints, locale } = useI18n();
   const { theme, toggleTheme } = useTheme();
   const { session, loading } = useSession();
   const isAdmin = useIsAdmin();
-
-  const { data: pointsData } = useQuery({
-    queryKey: ["navbar-points", session?.user?.id],
-    queryFn: async () => {
-      if (!session?.user?.id) return 0;
-      const { data, error } = await supabase
-        .from("points_balances")
-        .select("balance")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-      if (error) return 0;
-      return data?.balance ?? 0;
-    },
-    enabled: !!session?.user?.id,
-    staleTime: 10000,
-  });
-
-  const pointsBalance = pointsData ?? 0;
+  const { balance } = usePointsBalance();
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur">
@@ -66,6 +49,17 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-1.5">
+          {session && balance !== null ? (
+            <Link
+              to="/account"
+              className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-bold text-accent transition-colors hover:bg-accent/20"
+              title={locale === "ar" ? "رصيد النقاط الحالي" : "Current Points Balance"}
+            >
+              <Sparkles className="size-3.5 text-accent" />
+              <span>{formatPoints(balance)}</span>
+            </Link>
+          ) : null}
+
           <Button variant="ghost" size="icon" onClick={toggleLocale} aria-label={t("language")}>
             <Languages className="size-4" />
           </Button>
@@ -75,19 +69,6 @@ export function SiteHeader() {
 
           {loading ? null : session ? (
             <>
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 border-primary/25 bg-primary/5 font-semibold text-primary hover:bg-primary/10"
-              >
-                <Link to="/account">
-                  <Coins className="size-3.5 text-primary" />
-                  <span>
-                    {locale === "ar" ? `${pointsBalance} نقطة` : `${pointsBalance} Points`}
-                  </span>
-                </Link>
-              </Button>
               <Button asChild variant="secondary" size="sm">
                 <Link to="/account">{t("account")}</Link>
               </Button>

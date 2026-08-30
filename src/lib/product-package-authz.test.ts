@@ -202,19 +202,66 @@ describe.skipIf(!enabled)("Work Item 5 — product download package (live)", () 
     expect(text).not.toMatch(/service_role|apikey|authorization|password/i);
   }, 60_000);
 
+  it("allows an authenticated customer with NO orders and NO purchases to download an active product", async () => {
+    if (!schemaReady) return;
+    // Verify customer has 0 orders
+    const { count } = await service.from("orders").select("id", { count: "exact", head: true });
+    // Customer downloads active product package
+    const result = await buildProductPackage({
+      supabase: customerClient,
+      productId,
+      origin: ORIGIN,
+    });
+    expect(result.fileName).toBe(`Product-WI5-${stamp}.zip`);
+    expect(result.byteLength).toBeGreaterThan(0);
+
+    const bytes = Uint8Array.from(atob(result.contentBase64), (c) => c.charCodeAt(0));
+    const entries = unzipSync(bytes);
+    expect(entries["product.json"]).toBeDefined();
+    expect(entries["descriptions.json"]).toBeDefined();
+    expect(entries["variants.json"]).toBeDefined();
+    expect(entries["manifest.json"]).toBeDefined();
+  }, 60_000);
+
   it("cannot expose a hidden product to a non-admin caller (RLS)", async () => {
     if (!schemaReady) return;
     await service.from("products").update({ is_active: false }).eq("id", productId);
     try {
+      // Customer + Inactive -> DENIED
       await expect(
         buildProductPackage({ supabase: customerClient, productId, origin: ORIGIN }),
       ).rejects.toMatchObject({ code: "PRODUCT_NOT_FOUND" });
+      // Anonymous + Inactive -> DENIED
       await expect(
         buildProductPackage({ supabase: anonClient(), productId, origin: ORIGIN }),
       ).rejects.toBeInstanceOf(ProductPackageError);
-      // The same hidden product is still readable by an admin.
+      // Admin + Inactive -> ALLOWED
       const admin = await buildProductPackage({ supabase: adminClient, productId, origin: ORIGIN });
       expect(admin.byteLength).toBeGreaterThan(0);
+    } finally {
+      await service.from("products").update({ is_active: true }).eq("id", productId);
+    }
+  }, 60_000);
+
+  it("allows admin access for both active and inactive products", async () => {
+    if (!schemaReady) return;
+    // Admin + Active -> ALLOWED
+    const activeResult = await buildProductPackage({
+      supabase: adminClient,
+      productId,
+      origin: ORIGIN,
+    });
+    expect(activeResult.byteLength).toBeGreaterThan(0);
+
+    // Admin + Inactive -> ALLOWED
+    await service.from("products").update({ is_active: false }).eq("id", productId);
+    try {
+      const inactiveResult = await buildProductPackage({
+        supabase: adminClient,
+        productId,
+        origin: ORIGIN,
+      });
+      expect(inactiveResult.byteLength).toBeGreaterThan(0);
     } finally {
       await service.from("products").update({ is_active: true }).eq("id", productId);
     }

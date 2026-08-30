@@ -325,13 +325,85 @@ export const addCartItem = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+const addMultipleSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        variantId: z.string().uuid(),
+        quantity: z.number().int().min(1).max(99),
+        paymentMethod: z.enum(["CASH", "POINTS"]),
+      }),
+    )
+    .min(1),
+});
+
+/** Adds multiple variants to the cart atomically with full server-authoritative validation. */
+export const addMultipleCartItems = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => addMultipleSchema.parse(data))
+  .handler(async ({ context, data }) => {
+    const { supabase, userId } = context;
+    const cartId = await ensureCart(supabase as never, userId);
+
+    for (const item of data.items) {
+      const variant = await supabase
+        .from("product_variants")
+        .select("id, stock, is_active, products!inner ( is_active, points_enabled )")
+        .eq("id", item.variantId)
+        .maybeSingle();
+      if (variant.error) throw new Error(variant.error.message);
+      if (!variant.data) throw new Error("VARIANT_NOT_FOUND");
+
+      const product = variant.data.products as unknown as {
+        is_active: boolean;
+        points_enabled: boolean;
+      };
+      if (!product.is_active) throw new Error("PRODUCT_INACTIVE");
+      if (!variant.data.is_active) throw new Error("VARIANT_INACTIVE");
+      if (item.paymentMethod === "POINTS" && !product.points_enabled) {
+        throw new Error("POINTS_NOT_ENABLED");
+      }
+
+      const existing = await supabase
+        .from("cart_items")
+        .select("id, quantity")
+        .eq("cart_id", cartId)
+        .eq("variant_id", item.variantId)
+        .eq("product_payment_method", item.paymentMethod)
+        .maybeSingle();
+      if (existing.error) throw new Error(existing.error.message);
+
+      const nextQuantity = Math.min(99, (existing.data?.quantity ?? 0) + item.quantity);
+      if (nextQuantity > variant.data.stock) throw new Error("INSUFFICIENT_STOCK");
+
+      if (existing.data) {
+        const { error } = await supabase
+          .from("cart_items")
+          .update({ quantity: nextQuantity })
+          .eq("id", existing.data.id);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await supabase.from("cart_items").insert({
+          cart_id: cartId,
+          variant_id: item.variantId,
+          quantity: item.quantity,
+          product_payment_method: item.paymentMethod,
+        });
+        if (error) throw new Error(error.message);
+      }
+    }
+
+    return { ok: true as const, count: data.items.length };
+  });
+
 const updateSchema = z.object({
   itemId: z.string().uuid(),
+  variantId: z.string().uuid().optional(),
   quantity: z.number().int().min(1).max(99).optional(),
   paymentMethod: z.enum(["CASH", "POINTS"]).optional(),
 });
 
-/** Updates quantity and/or the item's payment method. Ownership enforced by RLS. */
+/** Updates variant, quantity and/or the item's payment method. Ownership enforced by RLS. */
 export const updateCartItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => updateSchema.parse(data))
@@ -340,26 +412,88 @@ export const updateCartItem = createServerFn({ method: "POST" })
 
     const item = await supabase
       .from("cart_items")
-      .select("id, variant_id, product_variants!inner ( stock, products!inner ( points_enabled ) )")
+      .select(
+        "id, cart_id, variant_id, quantity, product_payment_method, product_variants!inner ( id, product_id, stock, products!inner ( id, is_active, points_enabled ) )",
+      )
       .eq("id", data.itemId)
       .maybeSingle();
     if (item.error) throw new Error(item.error.message);
     if (!item.data) throw new Error("FORBIDDEN");
 
-    const variant = item.data.product_variants as unknown as {
+    const currentVariant = item.data.product_variants as unknown as {
+      id: string;
+      product_id: string;
       stock: number;
-      products: { points_enabled: boolean };
+      products: { id: string; is_active: boolean; points_enabled: boolean };
     };
-    if (data.quantity !== undefined && data.quantity > variant.stock) {
+
+    let targetVariantId = item.data.variant_id;
+    let targetStock = currentVariant.stock;
+    let targetPointsEnabled = currentVariant.products.points_enabled;
+
+    if (data.variantId && data.variantId !== item.data.variant_id) {
+      const newVar = await supabase
+        .from("product_variants")
+        .select("id, product_id, stock, products!inner ( id, is_active, points_enabled )")
+        .eq("id", data.variantId)
+        .maybeSingle();
+      if (newVar.error || !newVar.data) throw new Error("VARIANT_NOT_FOUND");
+
+      const newVarData = newVar.data as unknown as {
+        id: string;
+        product_id: string;
+        stock: number;
+        products: { id: string; is_active: boolean; points_enabled: boolean };
+      };
+
+      if (!newVarData.products.is_active) throw new Error("PRODUCT_INACTIVE");
+      targetVariantId = newVarData.id;
+      targetStock = newVarData.stock;
+      targetPointsEnabled = newVarData.products.points_enabled;
+    }
+
+    const qty = data.quantity !== undefined ? data.quantity : item.data.quantity;
+    if (qty > targetStock) {
       throw new Error("INSUFFICIENT_STOCK");
     }
-    if (data.paymentMethod === "POINTS" && !variant.products.points_enabled) {
+
+    const method =
+      data.paymentMethod !== undefined ? data.paymentMethod : item.data.product_payment_method;
+    if (method === "POINTS" && !targetPointsEnabled) {
       throw new Error("POINTS_NOT_ENABLED");
     }
 
-    const patch: { quantity?: number; product_payment_method?: PaymentMethod } = {};
+    // Check if another cart item in the same cart already has targetVariantId
+    if (data.variantId && data.variantId !== item.data.variant_id) {
+      const existingSameVariant = await supabase
+        .from("cart_items")
+        .select("id, quantity")
+        .eq("cart_id", item.data.cart_id)
+        .eq("variant_id", targetVariantId)
+        .neq("id", data.itemId)
+        .maybeSingle();
+
+      if (existingSameVariant.data) {
+        // Merge quantities into that item, delete this item
+        const mergedQty = Math.min(targetStock, existingSameVariant.data.quantity + qty);
+        await supabase
+          .from("cart_items")
+          .update({ quantity: mergedQty, product_payment_method: method })
+          .eq("id", existingSameVariant.data.id);
+        await supabase.from("cart_items").delete().eq("id", data.itemId);
+        return { ok: true as const, mergedInto: existingSameVariant.data.id };
+      }
+    }
+
+    const patch: {
+      variant_id?: string;
+      quantity?: number;
+      product_payment_method?: PaymentMethod;
+    } = {};
+    if (data.variantId !== undefined) patch.variant_id = data.variantId;
     if (data.quantity !== undefined) patch.quantity = data.quantity;
     if (data.paymentMethod !== undefined) patch.product_payment_method = data.paymentMethod;
+
     if (Object.keys(patch).length === 0) return { ok: true as const };
 
     const { error } = await supabase.from("cart_items").update(patch).eq("id", data.itemId);

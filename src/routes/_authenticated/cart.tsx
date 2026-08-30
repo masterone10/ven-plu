@@ -77,14 +77,14 @@ function CartPage() {
       <SiteHeader />
       <main className="mx-auto w-full max-w-4xl px-4 py-10">
         <h1 className="text-2xl font-black tracking-tight">
-          {locale === "ar" ? "سلة الشراء" : "Your cart"}
+          {locale === "ar" ? "أوردرات" : "Orders"}
         </h1>
 
         {isPending ? (
           <Loader2 className="mt-8 size-5 animate-spin text-muted-foreground" />
         ) : items.length === 0 ? (
           <p className="mt-8 text-sm text-muted-foreground">
-            {locale === "ar" ? "السلة فاضية. " : "Your cart is empty. "}
+            {locale === "ar" ? "لا توجد منتجات في الأوردر حالياً. " : "Your order draft is empty. "}
             <Link to="/products" className="font-medium text-accent underline">
               {locale === "ar" ? "تصفح المنتجات" : "Browse products"}
             </Link>

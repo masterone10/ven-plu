@@ -42,8 +42,7 @@ export const getAccountOverview = createServerFn({ method: "GET" })
         .from("points_transactions")
         .select("id, type, delta, note, order_id, created_at")
         .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(50),
+        .order("created_at", { ascending: false }),
     ]);
 
     if (profileResult.error) throw new Error(profileResult.error.message);
@@ -77,6 +76,28 @@ export const getAccountOverview = createServerFn({ method: "GET" })
       });
     }
 
+    if (!profile) {
+      throw new Error("PROFILE_NOT_FOUND");
+    }
+
+    const ledgerRows = ledgerResult.data ?? [];
+    let pointsBalance = balanceResult.data?.balance;
+    const computedLedgerBalance = ledgerRows.reduce(
+      (sum, row) => sum + (Number(row.delta) || 0),
+      0,
+    );
+
+    if (pointsBalance === undefined || pointsBalance === null) {
+      pointsBalance = computedLedgerBalance;
+    } else if (ledgerRows.length > 0 && pointsBalance !== computedLedgerBalance) {
+      pointsBalance = computedLedgerBalance;
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
+        .from("points_balances")
+        .update({ balance: computedLedgerBalance })
+        .eq("user_id", userId);
+    }
+
     return {
       profile: {
         id: resolvedProfile.id,
@@ -87,8 +108,8 @@ export const getAccountOverview = createServerFn({ method: "GET" })
         referralCode: resolvedProfile.referralCode,
         referredBy: resolvedProfile.referredBy,
       },
-      pointsBalance: balanceResult.data?.balance ?? 0,
-      ledger: (ledgerResult.data ?? []).map((row) => ({
+      pointsBalance: Math.max(0, Math.floor(pointsBalance ?? 0)),
+      ledger: ledgerRows.slice(0, 50).map((row) => ({
         id: row.id,
         type: row.type,
         delta: row.delta,
